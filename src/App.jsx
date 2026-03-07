@@ -5,6 +5,7 @@ import TopBar from './components/layout/TopBar'
 import Dashboard from './components/dashboard/Dashboard'
 import SkillsHub from './components/skills/SkillsHub'
 import LogsConsole from './components/logs/LogsConsole'
+import Workspace from './components/workspace/Workspace'
 import ComingSoon from './components/shared/ComingSoon'
 
 const POLL_MS = 30_000
@@ -33,7 +34,6 @@ export default function App() {
         setAlfredError(`Cannot reach Alfred server: ${err.message}`)
       }
     }
-
     fetchAll()
     const poll = setInterval(fetchAll, POLL_MS)
     return () => clearInterval(poll)
@@ -46,10 +46,11 @@ export default function App() {
 
   const renderView = () => {
     switch (activeView) {
-      case 'dashboard': return <Dashboard />
-      case 'skills':    return <SkillsHub />
-      case 'logs':      return <LogsConsole />
-      default:          return <ComingSoon view={activeView} />
+      case 'dashboard':  return <Dashboard />
+      case 'workspace':  return <Workspace />
+      case 'skills':     return <SkillsHub />
+      case 'logs':       return <LogsConsole />
+      default:           return <ComingSoon view={activeView} />
     }
   }
 
@@ -58,9 +59,7 @@ export default function App() {
       <Sidebar />
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <TopBar />
-        <main className="flex-1 overflow-hidden">
-          {renderView()}
-        </main>
+        <main className="flex-1 overflow-hidden">{renderView()}</main>
       </div>
     </div>
   )
