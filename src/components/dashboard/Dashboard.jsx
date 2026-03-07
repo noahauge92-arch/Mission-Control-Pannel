@@ -103,7 +103,7 @@ export default function Dashboard() {
           label="P&L Aujourd'hui"
           value={fmt$(pnlToday)}
           sub="depuis 00:00"
-          color={Number(pnlToday) >= 0 ? 'green' : 'red'}
+          color={pnlToday == null ? 'amber' : Number(pnlToday) >= 0 ? 'green' : 'red'}
           pnl
         />
         {/* P&L All-Time */}
@@ -112,7 +112,7 @@ export default function Dashboard() {
           label="P&L All-Time"
           value={fmt$(pnlAllTime)}
           sub={`${totalTrades} trades`}
-          color={Number(pnlAllTime) >= 0 ? 'green' : 'red'}
+          color={pnlAllTime == null ? 'amber' : Number(pnlAllTime) >= 0 ? 'green' : 'red'}
           pnl
         />
         {/* Win Rate */}
@@ -121,7 +121,7 @@ export default function Dashboard() {
           label="Win Rate"
           value={winRate != null ? `${winRate.toFixed(1)}%` : '—'}
           sub={`${totalTrades} trades total`}
-          color={winRate >= 55 ? 'green' : winRate >= 45 ? 'amber' : 'red'}
+          color={winRate == null ? 'amber' : winRate >= 55 ? 'green' : winRate >= 45 ? 'amber' : 'red'}
         />
         {/* Regime */}
         <div

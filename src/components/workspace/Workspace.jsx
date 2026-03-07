@@ -1,5 +1,31 @@
+/*
+ * ════════════════════════════════════════════════════════════════════════════
+ * WORKSPACE — Visual Agent Orchestration
+ * ════════════════════════════════════════════════════════════════════════════
+ *
+ * Architecture (future vision):
+ *
+ *   ┌──────────────────────────────────────────────────┐
+ *   │  BABY BOSS  (Orchestrator)                       │
+ *   │  objective → dispatch → monitor → aggregate      │
+ *   └────────────────┬─────────────────────────────────┘
+ *                    │  future: message bus / task queue
+ *          ┌─────────▼──────────────────────────────┐
+ *          │  Sub-Agents (Workers)                  │
+ *          │  Alfred (TradingAgent)  +  custom …    │
+ *          └────────────────────────────────────────┘
+ *
+ *  - Boss objective  → PATCH /api/boss  → ~/.openclaw/alfred/boss.json
+ *  - Sub-agents      → CRUD /api/agents → agents.json
+ *  - Alfred          → auto-injected from /api/alfred state (read-only)
+ *  - Visual arrows   → decorative — represent future dispatch channels
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ */
+
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, X, Trash2, Play, Square, Edit2, RefreshCw, AlertCircle } from 'lucide-react'
+import { Plus, X, Trash2, Play, Square, Edit2, RefreshCw, AlertCircle, Crown } from 'lucide-react'
+import { useStore } from '../../store/useStore'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const STATUS_CFG = {
@@ -14,109 +40,166 @@ const CHAIR_PALETTE = [
   '#a855f7','#06b6d4','#ec4899','#f97316',
 ]
 
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `${r},${g},${b}`
+}
+
+function trunc(str, n) {
+  const s = String(str ?? '')
+  return s.length > n ? s.slice(0, n) : s
+}
+
 // ── PixelDesk ─────────────────────────────────────────────────────────────────
-function PixelDesk({ agent, selected, onClick }) {
-  const s = STATUS_CFG[agent.status] || STATUS_CFG.idle
-  const chair = agent.chairColor || '#ef4444'
+function PixelDesk({ agent, selected, onClick, onToggle, deskLogs, isSystem }) {
+  const s   = STATUS_CFG[agent.status] || STATUS_CFG.idle
+  const chair = agent.color || '#ef4444'
+  const logs  = deskLogs || []
 
   return (
-    <div
-      onClick={onClick}
-      title={`${agent.name} — ${s.label}`}
-      style={{ position: 'relative', width: 148, cursor: 'pointer', userSelect: 'none',
-        filter: selected ? 'drop-shadow(0 0 10px #f59e0b)' : undefined, transition: 'filter 0.15s' }}
-    >
-      {/* Status LED */}
-      <div style={{
-        position: 'absolute', top: 4, right: 4, zIndex: 10,
-        width: 9, height: 9, background: s.color,
-        border: '1.5px solid rgba(0,0,0,0.5)', boxShadow: `0 0 6px ${s.color}`,
-      }} />
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div
+        onClick={onClick}
+        title={`${agent.name} — ${s.label}`}
+        style={{
+          position: 'relative', width: 148, cursor: 'pointer', userSelect: 'none',
+          filter: selected ? 'drop-shadow(0 0 10px #f59e0b)' : undefined,
+          transition: 'filter 0.15s',
+        }}
+      >
+        {/* Status LED */}
+        <div style={{
+          position: 'absolute', top: 4, right: 4, zIndex: 10,
+          width: 9, height: 9, background: s.color,
+          border: '1.5px solid rgba(0,0,0,0.5)', boxShadow: `0 0 6px ${s.color}`,
+        }} />
 
-      {/* Desk surface */}
-      <div style={{
-        background: '#c49a6c', border: '2px solid #8b6030',
-        boxShadow: '0 4px 0 #6b4020, 3px 0 0 #a07848, inset 0 1px 0 rgba(255,255,255,0.25)',
-        padding: '10px 10px 8px', position: 'relative',
-      }}>
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'rgba(255,255,255,0.2)' }} />
+        {/* System icon */}
+        {isSystem && (
+          <div style={{ position: 'absolute', top: 5, left: 6, zIndex: 10, fontSize: 10, color: '#f59e0b' }}>⚙</div>
+        )}
 
-        {/* Monitor */}
-        <div style={{ background: '#1a1a2e', border: '2px solid #2a2a4a', width: 70, height: 50, margin: '0 auto 6px', position: 'relative', overflow: 'hidden' }}>
-          {/* Screen content */}
-          {agent.status === 'running' && (
-            <svg viewBox="0 0 70 50" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-              <rect width="70" height="50" fill="#041a0e" />
-              <polyline points="2,42 12,32 22,38 32,20 42,26 52,12 62,16 70,8" fill="none" stroke="#22c55e" strokeWidth="1.5" />
-              <polyline points="2,42 12,32 22,38 32,20 42,26 52,12 62,16 70,8 70,50 2,50" fill="rgba(34,197,94,0.08)" />
-              <text x="4" y="10" fill="#22c55e" fontSize="6" fontFamily="monospace" opacity="0.7">LIVE</text>
-            </svg>
-          )}
-          {agent.status === 'idle' && (
-            <svg viewBox="0 0 70 50" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-              <rect width="70" height="50" fill="#0a0a12" />
-              <text x="8" y="28" fill="#3a4a6a" fontSize="7" fontFamily="monospace">STANDBY</text>
-              <rect x="4" y="34" width="20" height="1" fill="#1a2a4a" />
-              <rect x="4" y="38" width="28" height="1" fill="#1a2a4a" />
-            </svg>
-          )}
-          {agent.status === 'stopped' && (
-            <svg viewBox="0 0 70 50" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-              <rect width="70" height="50" fill="#0d0808" />
-              <text x="22" y="30" fill="#3a1a1a" fontSize="9" fontFamily="monospace">OFF</text>
-            </svg>
-          )}
-          {agent.status === 'error' && (
-            <svg viewBox="0 0 70 50" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-              <rect width="70" height="50" fill="#0d0a00" />
-              <text x="10" y="16" fill="#f59e0b" fontSize="6" fontFamily="monospace">WARNING</text>
-              <text x="28" y="38" fill="#f59e0b" fontSize="18" fontFamily="monospace">!</text>
-            </svg>
-          )}
-          {/* Stand */}
-          <div style={{ position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)', width: 10, height: 4, background: '#2a2a3a' }} />
-        </div>
+        {/* Desk surface */}
+        <div style={{
+          background: '#c49a6c', border: '2px solid #8b6030',
+          boxShadow: '0 4px 0 #6b4020, 3px 0 0 #a07848, inset 0 1px 0 rgba(255,255,255,0.25)',
+          padding: '10px 10px 8px', position: 'relative',
+        }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'rgba(255,255,255,0.2)' }} />
 
-        {/* Keyboard */}
-        <div style={{ background: '#3a3a4a', border: '1px solid #222', height: 13, position: 'relative' }}>
-          {[0, 1, 2].map((i) => (
-            <div key={i} style={{ position: 'absolute', top: 2 + i * 4, left: 4, right: 4, height: 1, background: 'rgba(255,255,255,0.12)' }} />
-          ))}
-          {/* Mouse */}
-          <div style={{ position: 'absolute', right: -14, top: -3, width: 10, height: 14, background: '#3a3a4a', border: '1px solid #222', borderRadius: '2px 2px 4px 4px' }}>
-            <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.1)', marginTop: 5 }} />
+          {/* Monitor */}
+          <div style={{
+            background: '#1a1a2e', border: '2px solid #2a2a4a',
+            width: 110, height: 58, margin: '0 auto 6px', position: 'relative', overflow: 'hidden',
+          }}>
+            {/* Log lines overlay (highest priority) */}
+            {logs.length > 0 ? (
+              <svg viewBox="0 0 110 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+                <rect width="110" height="58" fill="#020810" />
+                {logs.slice(-3).map((line, i) => {
+                  const clean = line.replace(/\x1B\[[0-9;]*m/g, '').replace(/^\[.*?\]\s*/, '').trim()
+                  const color = /error/i.test(line) ? '#ef4444' : /warn/i.test(line) ? '#f59e0b' : '#22c55e'
+                  return (
+                    <text key={i} x="3" y={13 + i * 16} fill={color} fontSize="7" fontFamily="monospace" opacity="0.85">
+                      {trunc(clean, 16)}
+                    </text>
+                  )
+                })}
+              </svg>
+            ) : agent.status === 'running' ? (
+              <svg viewBox="0 0 110 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+                <rect width="110" height="58" fill="#041a0e" />
+                <polyline points="2,52 18,40 30,46 46,28 62,35 78,18 94,24 110,10" fill="none" stroke="#22c55e" strokeWidth="1.5" />
+                <polyline points="2,52 18,40 30,46 46,28 62,35 78,18 94,24 110,10 110,58 2,58" fill="rgba(34,197,94,0.07)" />
+                <text x="4" y="12" fill="#22c55e" fontSize="7" fontFamily="monospace" opacity="0.7">LIVE</text>
+              </svg>
+            ) : agent.status === 'idle' ? (
+              <svg viewBox="0 0 110 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+                <rect width="110" height="58" fill="#0a0a12" />
+                <text x="14" y="33" fill="#3a4a6a" fontSize="8" fontFamily="monospace">STANDBY</text>
+              </svg>
+            ) : agent.status === 'stopped' ? (
+              <svg viewBox="0 0 110 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+                <rect width="110" height="58" fill="#0d0808" />
+                <text x="36" y="37" fill="#3a1a1a" fontSize="13" fontFamily="monospace">OFF</text>
+              </svg>
+            ) : (
+              <svg viewBox="0 0 110 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+                <rect width="110" height="58" fill="#0d0a00" />
+                <text x="20" y="22" fill="#f59e0b" fontSize="7" fontFamily="monospace">WARNING</text>
+                <text x="44" y="50" fill="#f59e0b" fontSize="22" fontFamily="monospace">!</text>
+              </svg>
+            )}
+            {/* Monitor stand */}
+            <div style={{ position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)', width: 10, height: 4, background: '#2a2a3a' }} />
+          </div>
+
+          {/* Keyboard */}
+          <div style={{ background: '#3a3a4a', border: '1px solid #222', height: 13, position: 'relative' }}>
+            {[0, 1, 2].map((i) => (
+              <div key={i} style={{ position: 'absolute', top: 2 + i * 4, left: 4, right: 4, height: 1, background: 'rgba(255,255,255,0.12)' }} />
+            ))}
+            <div style={{ position: 'absolute', right: -14, top: -3, width: 10, height: 14, background: '#3a3a4a', border: '1px solid #222', borderRadius: '2px 2px 4px 4px' }}>
+              <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.1)', marginTop: 5 }} />
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Desk front */}
-      <div style={{ background: '#a07848', height: 6, border: '2px solid #8b6030', borderTop: 'none', boxShadow: '0 2px 0 #6b4020' }} />
+        {/* Desk front */}
+        <div style={{ background: '#a07848', height: 6, border: '2px solid #8b6030', borderTop: 'none', boxShadow: '0 2px 0 #6b4020' }} />
 
-      {/* Legs */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 14px' }}>
-        {[0, 1].map((i) => <div key={i} style={{ width: 8, height: 12, background: '#7a5030', border: '1px solid #5a3820' }} />)}
-      </div>
-
-      {/* Chair */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 4 }}>
-        <div style={{ width: 36, height: 10, background: chair, border: `2px solid rgba(0,0,0,0.3)`, borderBottom: 'none', boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.2)' }} />
-        <div style={{ width: 46, height: 34, background: chair, border: `2px solid rgba(0,0,0,0.3)`, boxShadow: `inset 0 2px 0 rgba(255,255,255,0.15), 0 3px 0 rgba(0,0,0,0.3)`, position: 'relative' }}>
-          <div style={{ position: 'absolute', top: 8, left: 4, right: 4, height: 1, background: 'rgba(255,255,255,0.18)' }} />
+        {/* Legs */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 14px' }}>
+          {[0, 1].map((i) => <div key={i} style={{ width: 8, height: 12, background: '#7a5030', border: '1px solid #5a3820' }} />)}
         </div>
-        <div style={{ width: 54, height: 5, background: '#7a7a8a', border: '1px solid #555', boxShadow: '0 2px 0 #444' }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', width: 52, marginTop: 2 }}>
-          {[0,1,2,3,4].map((i) => <div key={i} style={{ width: 7, height: 7, background: '#555', border: '1px solid #333', borderRadius: '50%' }} />)}
+
+        {/* Chair */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 4 }}>
+          <div style={{ width: 36, height: 10, background: chair, border: '2px solid rgba(0,0,0,0.3)', borderBottom: 'none', boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.2)' }} />
+          <div style={{ width: 46, height: 34, background: chair, border: '2px solid rgba(0,0,0,0.3)', boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.15), 0 3px 0 rgba(0,0,0,0.3)', position: 'relative' }}>
+            <div style={{ position: 'absolute', top: 8, left: 4, right: 4, height: 1, background: 'rgba(255,255,255,0.18)' }} />
+          </div>
+          <div style={{ width: 54, height: 5, background: '#7a7a8a', border: '1px solid #555', boxShadow: '0 2px 0 #444' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', width: 52, marginTop: 2 }}>
+            {[0,1,2,3,4].map((i) => <div key={i} style={{ width: 7, height: 7, background: '#555', border: '1px solid #333', borderRadius: '50%' }} />)}
+          </div>
         </div>
+
+        {/* Name + role label */}
+        <div style={{ textAlign: 'center', marginTop: 6 }}>
+          <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#c8d8e8', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: '0 4px' }}>
+            {agent.name}
+          </div>
+          {agent.role && (
+            <div style={{ fontFamily: 'monospace', fontSize: 8, color: '#4a6080', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: '0 4px' }}>
+              {agent.role}
+            </div>
+          )}
+          <div style={{ fontFamily: 'monospace', fontSize: 9, color: s.color, marginTop: 2 }}>● {s.label}</div>
+        </div>
+
+        {/* Selection ring */}
+        {selected && <div style={{ position: 'absolute', inset: -3, border: '2px solid #f59e0b', pointerEvents: 'none', boxShadow: '0 0 12px rgba(245,158,11,0.35)' }} />}
       </div>
 
-      {/* Label */}
-      <div style={{ textAlign: 'center', marginTop: 6 }}>
-        <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#c8d8e8', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: '0 4px' }}>{agent.name}</div>
-        <div style={{ fontFamily: 'monospace', fontSize: 9, color: s.color, marginTop: 2 }}>● {s.label}</div>
-      </div>
-
-      {/* Selection ring */}
-      {selected && <div style={{ position: 'absolute', inset: -3, border: '2px solid #f59e0b', pointerEvents: 'none', boxShadow: '0 0 12px rgba(245,158,11,0.35)' }} />}
+      {/* Inline Start/Stop button */}
+      {onToggle && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggle(agent.id) }}
+          style={{
+            marginTop: 8,
+            background: agent.status === 'running' ? 'rgba(239,68,68,0.12)' : 'rgba(34,197,94,0.12)',
+            border: `1px solid ${agent.status === 'running' ? 'rgba(239,68,68,0.4)' : 'rgba(34,197,94,0.4)'}`,
+            color: agent.status === 'running' ? '#ef4444' : '#22c55e',
+            fontFamily: 'monospace', fontSize: 10, padding: '4px 14px',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+          }}
+        >
+          {agent.status === 'running' ? <><Square size={9} /> STOP</> : <><Play size={9} /> START</>}
+        </button>
+      )}
     </div>
   )
 }
@@ -126,7 +209,7 @@ function EmptySlot({ onClick }) {
   const [hover, setHover] = useState(false)
   return (
     <div onClick={onClick} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      style={{ width: 148, height: 218, border: `2px dashed ${hover ? '#f59e0b' : '#2a3a50'}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: hover ? 'rgba(245,158,11,0.04)' : 'transparent', transition: 'all 0.15s', gap: 10 }}
+      style={{ width: 148, height: 240, border: `2px dashed ${hover ? '#f59e0b' : '#2a3a50'}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: hover ? 'rgba(245,158,11,0.04)' : 'transparent', transition: 'all 0.15s', gap: 10 }}
     >
       <div style={{ width: 36, height: 36, border: `2px dashed ${hover ? '#f59e0b' : '#2a3a50'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: hover ? '#f59e0b' : '#2a3a50', transition: 'all 0.15s' }}>
         <Plus size={18} />
@@ -136,16 +219,128 @@ function EmptySlot({ onClick }) {
   )
 }
 
+// ── BossDesk ──────────────────────────────────────────────────────────────────
+function BossDesk({ boss, onSave }) {
+  const [objective, setObjective] = useState(boss?.currentObjective || '')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => { setObjective(boss?.currentObjective || '') }, [boss?.currentObjective])
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      const r = await fetch('/api/boss', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentObjective: objective }),
+      })
+      const updated = await r.json()
+      setSaved(true)
+      onSave?.(updated)
+      setTimeout(() => setSaved(false), 2000)
+    } catch { /* ignore */ }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div style={{
+      background: 'linear-gradient(135deg, rgba(245,158,11,0.06) 0%, rgba(160,90,0,0.10) 100%)',
+      borderBottom: '2px solid rgba(245,158,11,0.25)',
+      padding: '18px 28px 16px',
+    }}>
+      {/* Boss header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <Crown size={18} color="#f59e0b" />
+        <div>
+          <div style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+            BABY BOSS
+          </div>
+          <div style={{ fontFamily: 'monospace', fontSize: 9, color: '#6b4420', letterSpacing: '0.06em', marginTop: 1 }}>
+            ORCHESTRATOR · NON-DELETABLE
+          </div>
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 7, height: 7, background: '#f59e0b', boxShadow: '0 0 6px #f59e0b', borderRadius: '50%' }} />
+          <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#f59e0b' }}>ACTIVE</span>
+        </div>
+      </div>
+
+      {/* Objective input */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+        <div style={{ flex: 1 }}>
+          <label style={{ display: 'block', fontFamily: 'monospace', fontSize: 9, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5 }}>
+            Current Objective
+          </label>
+          <textarea
+            value={objective}
+            onChange={(e) => setObjective(e.target.value)}
+            placeholder="Define the boss objective… e.g. 'Maximize daily P&L while keeping risk below 5%'"
+            rows={2}
+            style={{
+              width: '100%', background: 'rgba(0,0,0,0.35)',
+              border: '1px solid rgba(245,158,11,0.22)',
+              color: '#e2e8f0', fontFamily: 'monospace', fontSize: 12,
+              padding: '7px 10px', boxSizing: 'border-box', resize: 'none', outline: 'none',
+            }}
+          />
+        </div>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          style={{
+            background: saved ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.13)',
+            border: `1px solid ${saved ? 'rgba(34,197,94,0.4)' : 'rgba(245,158,11,0.35)'}`,
+            color: saved ? '#22c55e' : '#f59e0b',
+            fontFamily: 'monospace', fontSize: 11, padding: '8px 18px',
+            cursor: saving ? 'default' : 'pointer', letterSpacing: '0.06em', whiteSpace: 'nowrap',
+            marginBottom: 1,
+          }}
+        >
+          {saving ? '...' : saved ? '✓ Saved' : 'Save'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── DispatchArrows ────────────────────────────────────────────────────────────
+// Decorative arrows from Boss → Agents
+function DispatchArrows({ count }) {
+  if (count === 0) return null
+  return (
+    <div style={{
+      display: 'flex', justifyContent: 'center', gap: 28, padding: '8px 0',
+      borderLeft: '2px solid rgba(245,158,11,0.12)',
+      borderRight: '2px solid rgba(245,158,11,0.12)',
+      background: 'rgba(245,158,11,0.02)',
+    }}>
+      {Array.from({ length: Math.min(count, 8) }).map((_, i) => (
+        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 3, opacity: 0.3 + (i % 3) * 0.1 }}>
+          {[0, 1, 2].map((j) => (
+            <div key={j} style={{
+              width: 0, height: 0,
+              borderLeft: '4px solid transparent',
+              borderRight: '4px solid transparent',
+              borderTop: `6px solid rgba(245,158,11,${0.4 + j * 0.15})`,
+            }} />
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── AgentPanel ────────────────────────────────────────────────────────────────
 function AgentPanel({ agent, onClose, onUpdate, onDelete }) {
   const [logs, setLogs] = useState([])
   const [logsLoading, setLogsLoading] = useState(false)
   const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState({ name: agent.name, description: agent.description, chairColor: agent.chairColor })
+  const [form, setForm] = useState({ name: agent.name, role: agent.role || '', color: agent.color || '#ef4444' })
   const s = STATUS_CFG[agent.status] || STATUS_CFG.idle
 
   useEffect(() => {
-    setForm({ name: agent.name, description: agent.description, chairColor: agent.chairColor })
+    setForm({ name: agent.name, role: agent.role || '', color: agent.color || '#ef4444' })
     setEditing(false)
   }, [agent.id])
 
@@ -158,10 +353,10 @@ function AgentPanel({ agent, onClose, onUpdate, onDelete }) {
 
   useEffect(() => { fetchLogs() }, [fetchLogs])
 
-  const toggleStatus = () => onUpdate(agent.id, { status: agent.status === 'running' ? 'stopped' : 'running' })
-  const save = async () => { await onUpdate(agent.id, form); setEditing(false) }
+  const toggleStatus = () => onUpdate?.(agent.id, { status: agent.status === 'running' ? 'stopped' : 'running' })
+  const save = async () => { await onUpdate?.(agent.id, form); setEditing(false) }
 
-  const S = (p) => ({ fontFamily: 'monospace', ...p })  // shorthand
+  const Mono = (p) => ({ fontFamily: 'monospace', ...p })
 
   return (
     <div style={{ width: 300, height: '100%', background: '#0d111a', borderLeft: '1px solid #1a2236', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
@@ -169,10 +364,11 @@ function AgentPanel({ agent, onClose, onUpdate, onDelete }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 12px', borderBottom: '1px solid #1a2236' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {agent.isSystem && <Crown size={12} color="#f59e0b" />}
             <div style={{ width: 9, height: 9, background: s.color, boxShadow: `0 0 6px ${s.color}` }} />
-            <span style={S({ fontSize: 13, fontWeight: 700, color: '#e2e8f0', textTransform: 'uppercase' })}>{agent.name}</span>
+            <span style={Mono({ fontSize: 13, fontWeight: 700, color: '#e2e8f0', textTransform: 'uppercase' })}>{agent.name}</span>
           </div>
-          <div style={S({ fontSize: 11, color: s.color, marginTop: 2 })}>{s.label}</div>
+          <div style={Mono({ fontSize: 11, color: s.color, marginTop: 2 })}>{s.label}</div>
         </div>
         <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><X size={14} /></button>
       </div>
@@ -180,23 +376,23 @@ function AgentPanel({ agent, onClose, onUpdate, onDelete }) {
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
         {!editing ? (
           <>
-            <Section label="Function">
-              <div style={S({ fontSize: 12, color: '#94a3b8', lineHeight: 1.5 })}>
-                {agent.description || <span style={{ color: '#2a3a50', fontStyle: 'italic' }}>No description</span>}
+            <PanelSection label="Role">
+              <div style={Mono({ fontSize: 12, color: '#94a3b8', lineHeight: 1.5 })}>
+                {agent.role || <span style={{ color: '#2a3a50', fontStyle: 'italic' }}>No role defined</span>}
               </div>
-            </Section>
+            </PanelSection>
 
-            <Section label="Chair">
-              <div style={{ width: 22, height: 22, background: agent.chairColor || '#ef4444', border: '2px solid rgba(255,255,255,0.12)' }} />
-            </Section>
+            <PanelSection label="Chair">
+              <div style={{ width: 22, height: 22, background: agent.color || '#ef4444', border: '2px solid rgba(255,255,255,0.12)' }} />
+            </PanelSection>
 
-            <Section label="Created">
-              <div style={S({ fontSize: 11, color: '#475569' })}>
+            <PanelSection label="Created">
+              <div style={Mono({ fontSize: 11, color: '#475569' })}>
                 {agent.createdAt ? new Date(agent.createdAt).toLocaleString('fr-FR') : '—'}
               </div>
-            </Section>
+            </PanelSection>
 
-            <Section label="Logs" extra={
+            <PanelSection label="Logs" extra={
               <button onClick={fetchLogs} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: 2 }}>
                 <RefreshCw size={11} className={logsLoading ? 'animate-spin' : ''} />
               </button>
@@ -213,26 +409,26 @@ function AgentPanel({ agent, onClose, onUpdate, onDelete }) {
                   ))
                 }
               </div>
-            </Section>
+            </PanelSection>
           </>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
-              <label style={S({ display: 'block', fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 })}>Name *</label>
+              <label style={Mono({ display: 'block', fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 })}>Name *</label>
               <input autoFocus value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                style={S({ width: '100%', background: '#1a2236', border: '1px solid #2a3a50', color: '#e2e8f0', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box' })} />
+                style={Mono({ width: '100%', background: '#1a2236', border: '1px solid #2a3a50', color: '#e2e8f0', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box' })} />
             </div>
             <div>
-              <label style={S({ display: 'block', fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 })}>Function</label>
-              <textarea rows={3} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                style={S({ width: '100%', background: '#1a2236', border: '1px solid #2a3a50', color: '#e2e8f0', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box', resize: 'none' })} />
+              <label style={Mono({ display: 'block', fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 })}>Role</label>
+              <textarea rows={3} value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
+                style={Mono({ width: '100%', background: '#1a2236', border: '1px solid #2a3a50', color: '#e2e8f0', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box', resize: 'none' })} />
             </div>
             <div>
-              <label style={S({ display: 'block', fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 })}>Chair Color</label>
+              <label style={Mono({ display: 'block', fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 })}>Chair Color</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {CHAIR_PALETTE.map((c) => (
-                  <div key={c} onClick={() => setForm((f) => ({ ...f, chairColor: c }))}
-                    style={{ width: 26, height: 26, background: c, cursor: 'pointer', border: form.chairColor === c ? '3px solid #f59e0b' : '2px solid transparent', boxShadow: form.chairColor === c ? '0 0 6px #f59e0b' : 'none', transition: 'all 0.1s' }} />
+                  <div key={c} onClick={() => setForm((f) => ({ ...f, color: c }))}
+                    style={{ width: 26, height: 26, background: c, cursor: 'pointer', border: form.color === c ? '3px solid #f59e0b' : '2px solid transparent', boxShadow: form.color === c ? '0 0 6px #f59e0b' : 'none', transition: 'all 0.1s' }} />
                 ))}
               </div>
             </div>
@@ -244,16 +440,27 @@ function AgentPanel({ agent, onClose, onUpdate, onDelete }) {
       <div style={{ padding: '12px 16px', borderTop: '1px solid #1a2236', display: 'flex', gap: 8 }}>
         {!editing ? (
           <>
-            <Btn onClick={toggleStatus} color={agent.status === 'running' ? '#ef4444' : '#22c55e'} style={{ flex: 1 }}>
-              {agent.status === 'running' ? <><Square size={11} /> Stop</> : <><Play size={11} /> Start</>}
-            </Btn>
-            <Btn onClick={() => setEditing(true)} color="#f59e0b"><Edit2 size={11} /> Edit</Btn>
-            <Btn onClick={() => onDelete(agent.id)} color="#ef4444" dim><Trash2 size={11} /></Btn>
+            {!agent.isSystem && onUpdate && (
+              <PanelBtn onClick={toggleStatus} color={agent.status === 'running' ? '#ef4444' : '#22c55e'} style={{ flex: 1 }}>
+                {agent.status === 'running' ? <><Square size={11} /> Stop</> : <><Play size={11} /> Start</>}
+              </PanelBtn>
+            )}
+            {!agent.isSystem && (
+              <>
+                <PanelBtn onClick={() => setEditing(true)} color="#f59e0b"><Edit2 size={11} /> Edit</PanelBtn>
+                {onDelete && <PanelBtn onClick={() => onDelete(agent.id)} color="#ef4444" dim><Trash2 size={11} /></PanelBtn>}
+              </>
+            )}
+            {agent.isSystem && (
+              <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#4a5a70', padding: '7px 4px' }}>
+                System agent — read only
+              </div>
+            )}
           </>
         ) : (
           <>
-            <Btn onClick={save} color="#22c55e" style={{ flex: 1 }} disabled={!form.name.trim()}>Save</Btn>
-            <Btn onClick={() => setEditing(false)} color="#64748b">Cancel</Btn>
+            <PanelBtn onClick={save} color="#22c55e" style={{ flex: 1 }} disabled={!form.name.trim()}>Save</PanelBtn>
+            <PanelBtn onClick={() => setEditing(false)} color="#64748b">Cancel</PanelBtn>
           </>
         )}
       </div>
@@ -261,7 +468,7 @@ function AgentPanel({ agent, onClose, onUpdate, onDelete }) {
   )
 }
 
-function Section({ label, children, extra }) {
+function PanelSection({ label, children, extra }) {
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ fontFamily: 'monospace', fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -272,7 +479,7 @@ function Section({ label, children, extra }) {
   )
 }
 
-function Btn({ onClick, color, children, style, disabled, dim }) {
+function PanelBtn({ onClick, color, children, style, disabled, dim }) {
   return (
     <button onClick={onClick} disabled={disabled}
       style={{ background: `rgba(${hexToRgb(color)},${dim ? '0.07' : '0.1'})`, border: `1px solid rgba(${hexToRgb(color)},${dim ? '0.2' : '0.3'})`, color, cursor: disabled ? 'default' : 'pointer', fontFamily: 'monospace', fontSize: 11, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 5, opacity: disabled ? 0.5 : 1, ...style }}>
@@ -281,16 +488,9 @@ function Btn({ onClick, color, children, style, disabled, dim }) {
   )
 }
 
-function hexToRgb(hex) {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return `${r},${g},${b}`
-}
-
 // ── CreateModal ───────────────────────────────────────────────────────────────
 function CreateModal({ onClose, onCreate }) {
-  const [form, setForm] = useState({ name: '', description: '', chairColor: '#ef4444' })
+  const [form, setForm] = useState({ name: '', role: '', color: '#ef4444' })
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
@@ -309,17 +509,17 @@ function CreateModal({ onClose, onCreate }) {
               style={{ width: '100%', background: '#1a2236', border: '1px solid #2a3a50', color: '#e2e8f0', fontFamily: 'monospace', fontSize: 12, padding: '8px 10px', boxSizing: 'border-box' }} />
           </div>
           <div>
-            <label style={{ display: 'block', fontFamily: 'monospace', fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Fonction</label>
-            <textarea rows={2} placeholder="Ce que fait cet agent..." value={form.description}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+            <label style={{ display: 'block', fontFamily: 'monospace', fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Rôle</label>
+            <textarea rows={2} placeholder="Ce que fait cet agent…" value={form.role}
+              onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
               style={{ width: '100%', background: '#1a2236', border: '1px solid #2a3a50', color: '#e2e8f0', fontFamily: 'monospace', fontSize: 12, padding: '8px 10px', boxSizing: 'border-box', resize: 'none' }} />
           </div>
           <div>
             <label style={{ display: 'block', fontFamily: 'monospace', fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Couleur de Chaise</label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {CHAIR_PALETTE.map((c) => (
-                <div key={c} onClick={() => setForm((f) => ({ ...f, chairColor: c }))}
-                  style={{ width: 30, height: 30, background: c, cursor: 'pointer', border: form.chairColor === c ? '3px solid #f59e0b' : '2px solid transparent', boxShadow: form.chairColor === c ? '0 0 8px #f59e0b' : 'none', transition: 'all 0.1s' }} />
+                <div key={c} onClick={() => setForm((f) => ({ ...f, color: c }))}
+                  style={{ width: 30, height: 30, background: c, cursor: 'pointer', border: form.color === c ? '3px solid #f59e0b' : '2px solid transparent', boxShadow: form.color === c ? '0 0 8px #f59e0b' : 'none', transition: 'all 0.1s' }} />
               ))}
             </div>
           </div>
@@ -344,23 +544,74 @@ function CreateModal({ onClose, onCreate }) {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function Workspace() {
-  const [agents, setAgents] = useState([])
-  const [loading, setLoading] = useState(true)
+  const alfred = useStore((s) => s.alfred)
+
+  const [agents, setAgents]       = useState([])
+  const [boss, setBoss]           = useState(null)
+  const [loading, setLoading]     = useState(true)
   const [selectedId, setSelectedId] = useState(null)
   const [showCreate, setShowCreate] = useState(false)
-  const [error, setError] = useState(null)
+  const [error, setError]         = useState(null)
+  const [logsMap, setLogsMap]     = useState({}) // id → string[]
 
-  const fetchAgents = useCallback(async () => {
-    try { const r = await fetch('/api/agents'); setAgents(await r.json()); setError(null) }
-    catch (e) { setError(e.message) }
+  // Alfred injected as read-only TradingAgent
+  const alfredAgent = alfred ? {
+    id:       'alfred-trading',
+    name:     'Alfred',
+    role:     'Trading Agent',
+    color:    '#f59e0b',
+    status:   alfred.status === 'running' ? 'running'
+              : alfred.status === 'error'   ? 'error'
+              : 'idle',
+    isSystem: true,
+  } : null
+
+  const fetchAll = useCallback(async () => {
+    try {
+      const [agentsRes, bossRes] = await Promise.all([
+        fetch('/api/agents'),
+        fetch('/api/boss').catch(() => null),
+      ])
+      const agentsData = await agentsRes.json()
+      setAgents(Array.isArray(agentsData) ? agentsData : [])
+      if (bossRes?.ok) setBoss(await bossRes.json())
+      setError(null)
+    } catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { fetchAgents() }, [fetchAgents])
+  useEffect(() => { fetchAll() }, [fetchAll])
+
+  // Fetch logs for all desks (last 3 lines shown on monitor screen)
+  useEffect(() => {
+    const ids = [
+      ...(alfredAgent ? [alfredAgent.id] : []),
+      ...agents.map((a) => a.id),
+    ]
+    if (!ids.length) return
+    const run = async () => {
+      const pairs = await Promise.all(
+        ids.map(async (id) => {
+          try {
+            const r = await fetch(`/api/agents/${id}/logs`)
+            const d = await r.json()
+            return [id, (d.lines || []).slice(-3)]
+          } catch { return [id, []] }
+        })
+      )
+      setLogsMap(Object.fromEntries(pairs))
+    }
+    run()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agents.length, !!alfred])
 
   const handleCreate = async (form) => {
     try {
-      const r = await fetch('/api/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      const r = await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
       const agent = await r.json()
       setAgents((a) => [...a, agent])
       setSelectedId(agent.id)
@@ -370,7 +621,11 @@ export default function Workspace() {
 
   const handleUpdate = async (id, updates) => {
     try {
-      const r = await fetch(`/api/agents/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) })
+      const r = await fetch(`/api/agents/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
       const updated = await r.json()
       setAgents((a) => a.map((ag) => ag.id === id ? updated : ag))
     } catch (e) { alert('Error: ' + e.message) }
@@ -383,12 +638,19 @@ export default function Workspace() {
     setSelectedId(null)
   }
 
-  const selected = agents.find((a) => a.id === selectedId)
+  const handleToggle = (id) => {
+    const agent = agents.find((a) => a.id === id)
+    if (agent) handleUpdate(id, { status: agent.status === 'running' ? 'stopped' : 'running' })
+  }
+
+  const allDesks = [...(alfredAgent ? [alfredAgent] : []), ...agents]
+  const selected = allDesks.find((a) => a.id === selectedId)
 
   return (
     <div style={{ height: '100%', display: 'flex', overflow: 'hidden', background: '#080b12' }}>
       {/* ── Room ── */}
       <div style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
+
         {/* Top wall */}
         <div style={{
           background: 'linear-gradient(180deg, #c4896b 0%, #b87850 100%)',
@@ -397,7 +659,6 @@ export default function Workspace() {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           position: 'sticky', top: 0, zIndex: 20,
         }}>
-          {/* 3-pane window */}
           <div style={{ display: 'flex', gap: 3, background: '#5a7a8a', padding: 4, border: '3px solid #4a6070', boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.1)' }}>
             {[0, 1, 2].map((i) => (
               <div key={i} style={{ width: 66, height: 52, background: 'linear-gradient(135deg, #d8f0ff 0%, #a8d8f0 45%, #7ab8dc 100%)', border: '2px solid #4a6070', position: 'relative', overflow: 'hidden' }}>
@@ -406,12 +667,9 @@ export default function Workspace() {
               </div>
             ))}
           </div>
-
           <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'rgba(0,0,0,0.32)', textTransform: 'uppercase', letterSpacing: '0.15em' }}>
             Agent Workspace
           </div>
-
-          {/* Shelf with colored folders */}
           <div style={{ background: '#8b5e3c', border: '2px solid #6b4020', padding: '5px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
             {[0, 1].map((row) => (
               <div key={row} style={{ display: 'flex', gap: 2 }}>
@@ -423,21 +681,26 @@ export default function Workspace() {
           </div>
         </div>
 
-        {/* Floor */}
+        {/* Boss section */}
+        <BossDesk boss={boss} onSave={setBoss} />
+
+        {/* Dispatch arrows (decorative — future message-passing channels) */}
+        <DispatchArrows count={allDesks.length} />
+
+        {/* Floor / agent grid */}
         <div style={{
-          minHeight: 'calc(100vh - 160px)',
+          minHeight: 'calc(100vh - 280px)',
           background: '#52606e',
           backgroundImage: `linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)`,
           backgroundSize: '48px 48px',
-          padding: '44px 44px 64px',
+          padding: '44px 44px 80px',
           position: 'relative',
         }}>
-          {/* CCr floor marks */}
-          {[...Array(5)].map((_, r) => [...Array(7)].map((_, c) => (
-            <div key={`${r}-${c}`} style={{ position: 'absolute', top: 90 + r * 130, left: 90 + c * 130, fontFamily: 'monospace', fontSize: 8, color: 'rgba(255,255,255,0.04)', userSelect: 'none', letterSpacing: '0.1em' }}>CCr</div>
+          {/* Floor watermarks */}
+          {[...Array(4)].map((_, r) => [...Array(6)].map((_, c) => (
+            <div key={`${r}-${c}`} style={{ position: 'absolute', top: 80 + r * 130, left: 90 + c * 130, fontFamily: 'monospace', fontSize: 8, color: 'rgba(255,255,255,0.04)', userSelect: 'none', letterSpacing: '0.1em' }}>CCr</div>
           )))}
 
-          {/* Error bar */}
           {error && (
             <div style={{ marginBottom: 24, padding: '10px 16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', fontFamily: 'monospace', fontSize: 11, display: 'flex', gap: 8, alignItems: 'center' }}>
               <AlertCircle size={13} /> {error} — <code>npm run server</code>
@@ -448,13 +711,21 @@ export default function Workspace() {
             ? <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: '#64748b', fontFamily: 'monospace', fontSize: 12 }}><RefreshCw size={16} className="animate-spin" /> Chargement...</div>
             : (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 52, alignItems: 'flex-start' }}>
-                {agents.map((agent) => (
-                  <PixelDesk key={agent.id} agent={agent} selected={selectedId === agent.id}
-                    onClick={() => setSelectedId(selectedId === agent.id ? null : agent.id)} />
+                {allDesks.map((agent) => (
+                  <PixelDesk
+                    key={agent.id}
+                    agent={agent}
+                    selected={selectedId === agent.id}
+                    onClick={() => setSelectedId(selectedId === agent.id ? null : agent.id)}
+                    onToggle={agent.isSystem ? undefined : handleToggle}
+                    deskLogs={logsMap[agent.id]}
+                    isSystem={agent.isSystem}
+                  />
                 ))}
                 <EmptySlot onClick={() => setShowCreate(true)} />
               </div>
-            )}
+            )
+          }
 
           {/* Trash can */}
           <div style={{ position: 'absolute', bottom: 24, left: 24 }}>
@@ -468,7 +739,12 @@ export default function Workspace() {
 
       {/* Detail panel */}
       {selected && (
-        <AgentPanel agent={selected} onClose={() => setSelectedId(null)} onUpdate={handleUpdate} onDelete={handleDelete} />
+        <AgentPanel
+          agent={selected}
+          onClose={() => setSelectedId(null)}
+          onUpdate={selected.isSystem ? undefined : handleUpdate}
+          onDelete={selected.isSystem ? undefined : handleDelete}
+        />
       )}
 
       {/* Create modal */}

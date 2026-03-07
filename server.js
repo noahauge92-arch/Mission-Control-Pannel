@@ -19,6 +19,7 @@ const PORT = 3001
 const ALFRED_DIR  = join(homedir(), '.openclaw', 'alfred')
 const SKILLS_DIR  = join(homedir(), '.openclaw', 'skills')
 const AGENTS_FILE = join(ALFRED_DIR, 'agents.json')
+const BOSS_FILE   = join(ALFRED_DIR, 'boss.json')
 
 app.use(cors())
 app.use(express.json())
@@ -56,6 +57,17 @@ function readAgents() {
 function saveAgents(agents) {
   mkdirSync(ALFRED_DIR, { recursive: true })
   writeFileSync(AGENTS_FILE, JSON.stringify(agents, null, 2))
+}
+
+function readBoss() {
+  if (!existsSync(BOSS_FILE)) return { currentObjective: '', assignedAgents: [], updatedAt: null }
+  try { return JSON.parse(readFileSync(BOSS_FILE, 'utf-8')) }
+  catch { return { currentObjective: '', assignedAgents: [], updatedAt: null } }
+}
+
+function saveBoss(data) {
+  mkdirSync(ALFRED_DIR, { recursive: true })
+  writeFileSync(BOSS_FILE, JSON.stringify(data, null, 2))
 }
 
 // ── Alfred state routes ───────────────────────────────────────────────────────
@@ -128,7 +140,7 @@ app.get('/api/agents', (_req, res) => {
 
 // Create or update an agent
 app.post('/api/agents', (req, res) => {
-  const { id, name, description, chairColor, status } = req.body
+  const { id, name, role, color, status } = req.body
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' })
 
   const agents = readAgents()
@@ -138,9 +150,10 @@ app.post('/api/agents', (req, res) => {
   const agent = {
     id: agentId,
     name: name.trim(),
-    description: description?.trim() || '',
-    chairColor: chairColor || '#ef4444',
+    role: role?.trim() || '',
+    color: color || '#ef4444',
     status: status || 'idle',
+    logs: [],
     createdAt: existing >= 0 ? agents[existing].createdAt : new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }
@@ -189,6 +202,19 @@ app.get('/api/agents/:id/logs', async (req, res) => {
   res.json({ lines: [], path: null })
 })
 
+// ── Boss (BABY BOSS) ──────────────────────────────────────────────────────────
+
+app.get('/api/boss', (_req, res) => {
+  res.json(readBoss())
+})
+
+app.patch('/api/boss', (req, res) => {
+  const current = readBoss()
+  const updated = { ...current, ...req.body, updatedAt: new Date().toISOString() }
+  saveBoss(updated)
+  res.json(updated)
+})
+
 // ── Health check ──────────────────────────────────────────────────────────────
 
 app.get('/api/health', (_req, res) => {
@@ -200,6 +226,7 @@ app.get('/api/health', (_req, res) => {
     analyticsExists: existsSync(join(ALFRED_DIR, 'analytics.json')),
     logExists:       existsSync(join(ALFRED_DIR, 'alfred.log')),
     agentsExists:    existsSync(AGENTS_FILE),
+    bossExists:      existsSync(BOSS_FILE),
     timestamp: new Date().toISOString(),
   })
 })
