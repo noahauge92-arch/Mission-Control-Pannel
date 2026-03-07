@@ -4,8 +4,8 @@ import Sidebar from './components/layout/Sidebar'
 import TopBar from './components/layout/TopBar'
 import Dashboard from './components/dashboard/Dashboard'
 import SkillsHub from './components/skills/SkillsHub'
-import LogsConsole from './components/logs/LogsConsole'
 import Workspace from './components/workspace/Workspace'
+import TaskManager from './components/tasks/TaskManager'
 import ComingSoon from './components/shared/ComingSoon'
 
 const POLL_MS = 30_000
@@ -48,8 +48,8 @@ export default function App() {
     switch (activeView) {
       case 'dashboard':  return <Dashboard />
       case 'workspace':  return <Workspace />
+      case 'tasks':      return <TaskManager />
       case 'skills':     return <SkillsHub />
-      case 'logs':       return <LogsConsole />
       default:           return <ComingSoon view={activeView} />
     }
   }

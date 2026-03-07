@@ -1,12 +1,12 @@
 import React from 'react'
-import { LayoutDashboard, Zap, ScrollText, ChevronRight, Monitor } from 'lucide-react'
+import { LayoutDashboard, Zap, ClipboardList, ChevronRight, Monitor } from 'lucide-react'
 import { useStore } from '../../store/useStore'
 import clsx from 'clsx'
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard',      icon: LayoutDashboard },
   { id: 'workspace', label: 'Workspace',       icon: Monitor },
-  { id: 'logs',      label: 'Logs Alfred',     icon: ScrollText },
+  { id: 'tasks',     label: 'Tâches',          icon: ClipboardList },
   { id: 'skills',    label: 'Skills',          icon: Zap },
 ]
 
@@ -17,9 +17,6 @@ export default function Sidebar() {
   const alfredError   = useStore((s) => s.alfredError)
   const loading       = useStore((s) => s.alfredLoading)
   const uptimeSeconds = useStore((s) => s.uptimeSeconds)
-  const logs          = useStore((s) => s.logs)
-
-  const errLogs = logs.filter((l) => l.level === 'error').length
   const regime  = (alfred?.regime ?? alfred?.market_regime ?? '—').toString().toUpperCase()
   const bank    = alfred?.bank ?? alfred?.balance ?? alfred?.capital
   const openPos = (alfred?.open_positions ?? alfred?.positions ?? []).length
@@ -75,7 +72,7 @@ export default function Sidebar() {
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon
           const isActive = activeView === item.id
-          const badge = item.id === 'logs' && errLogs > 0 ? errLogs : null
+          const badge = null
           return (
             <button key={item.id} onClick={() => setActiveView(item.id)}
               className={clsx('w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] font-medium transition-all mb-0.5 group',

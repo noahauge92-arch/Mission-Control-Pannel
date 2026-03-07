@@ -3,36 +3,37 @@
  * WORKSPACE — Visual Agent Orchestration
  * ════════════════════════════════════════════════════════════════════════════
  *
- * Architecture (future vision):
+ * BABY BOSS — Chef de Projet
+ *     ├── reçoit objectif en langage naturel
+ *     ├── analyse les tâches créées par l'humain
+ *     ├── dispatche vers le bon agent selon son rôle
+ *     └── monitore via state files et logs réels
  *
- *   ┌──────────────────────────────────────────────────┐
- *   │  BABY BOSS  (Orchestrator)                       │
- *   │  objective → dispatch → monitor → aggregate      │
- *   └────────────────┬─────────────────────────────────┘
- *                    │  future: message bus / task queue
- *          ┌─────────▼──────────────────────────────┐
- *          │  Sub-Agents (Workers)                  │
- *          │  Alfred (TradingAgent)  +  custom …    │
- *          └────────────────────────────────────────┘
+ * Agents Système (non-supprimables)
+ *     ├── Alfred    → alfred-polymarket.mjs  → trading Polymarket 24/7
+ *     └── Balthazar → balthazar.mjs          → coding site web et app avec github
  *
- *  - Boss objective  → PATCH /api/boss  → ~/.openclaw/alfred/boss.json
- *  - Sub-agents      → CRUD /api/agents → agents.json
- *  - Alfred          → auto-injected from /api/alfred state (read-only)
- *  - Visual arrows   → decorative — represent future dispatch channels
+ * Agents Custom (créés via modal +)
+ *     └── définis par l'utilisateur, scripts dans ~/.openclaw/agents/
+ *
+ * Flux de travail
+ *     Humain crée tâches → Baby Boss dispatche → Agents exécutent
+ *     → Résultats dans state files → Dashboard affiche tout en temps réel
  *
  * ════════════════════════════════════════════════════════════════════════════
  */
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, X, Trash2, Play, Square, Edit2, RefreshCw, AlertCircle, Crown } from 'lucide-react'
+import { Plus, X, Trash2, Play, Square, Edit2, RefreshCw, AlertCircle, Crown, Rocket } from 'lucide-react'
 import { useStore } from '../../store/useStore'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const STATUS_CFG = {
-  running: { color: '#22c55e', label: 'Running', pulse: true  },
-  idle:    { color: '#94a3b8', label: 'Idle',    pulse: false },
-  stopped: { color: '#ef4444', label: 'Stopped', pulse: false },
-  error:   { color: '#f59e0b', label: 'Error',   pulse: true  },
+  running: { color: '#22c55e', label: 'RUNNING', pulse: true  },
+  idle:    { color: '#94a3b8', label: 'IDLE',    pulse: false },
+  stopped: { color: '#ef4444', label: 'OFFLINE', pulse: false },
+  error:   { color: '#f59e0b', label: 'ERROR',   pulse: true  },
+  offline: { color: '#ef4444', label: 'OFFLINE', pulse: false },
 }
 
 const CHAIR_PALETTE = [
@@ -52,11 +53,75 @@ function trunc(str, n) {
   return s.length > n ? s.slice(0, n) : s
 }
 
+// ── CSS animations (injected once) ───────────────────────────────────────────
+const STYLE_ID = 'workspace-animations'
+if (typeof document !== 'undefined' && !document.getElementById(STYLE_ID)) {
+  const style = document.createElement('style')
+  style.id = STYLE_ID
+  style.textContent = `
+    @keyframes ws-typing {
+      0%, 100% { transform: rotate(0deg); }
+      25% { transform: rotate(2deg); }
+      75% { transform: rotate(-2deg); }
+    }
+    @keyframes ws-glow {
+      0%, 100% { box-shadow: 0 0 6px rgba(34,197,94,0.3); }
+      50% { box-shadow: 0 0 16px rgba(34,197,94,0.6); }
+    }
+    @keyframes ws-pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+  `
+  document.head.appendChild(style)
+}
+
+// ── Pixel Character SVG (32x32) ──────────────────────────────────────────────
+function PixelCharacter({ color, icon, animate }) {
+  return (
+    <svg
+      width="32" height="32" viewBox="0 0 32 32"
+      style={{
+        animation: animate ? 'ws-typing 0.8s ease-in-out infinite' : 'none',
+        transformOrigin: 'center bottom',
+      }}
+    >
+      {/* Head */}
+      <rect x="12" y="2" width="8" height="8" fill="#f5c6a0" stroke="#c48a60" strokeWidth="0.5" />
+      {/* Eyes */}
+      <rect x="14" y="5" width="2" height="2" fill="#2a2a3a" />
+      <rect x="18" y="5" width="2" height="2" fill="#2a2a3a" />
+      {/* Body */}
+      <rect x="10" y="10" width="12" height="12" fill={color} stroke="rgba(0,0,0,0.3)" strokeWidth="0.5" />
+      {/* T-shirt icon */}
+      <text x="16" y="19" textAnchor="middle" fontSize="7" fill="white" style={{ filter: 'drop-shadow(0 0 1px rgba(0,0,0,0.5))' }}>
+        {icon}
+      </text>
+      {/* Arms */}
+      <rect x="6" y="11" width="4" height="8" fill={color} stroke="rgba(0,0,0,0.2)" strokeWidth="0.5" />
+      <rect x="22" y="11" width="4" height="8" fill={color} stroke="rgba(0,0,0,0.2)" strokeWidth="0.5" />
+      {/* Hands */}
+      <rect x="6" y="19" width="4" height="3" fill="#f5c6a0" />
+      <rect x="22" y="19" width="4" height="3" fill="#f5c6a0" />
+      {/* Legs */}
+      <rect x="11" y="22" width="4" height="8" fill="#3a4a6a" />
+      <rect x="17" y="22" width="4" height="8" fill="#3a4a6a" />
+      {/* Shoes */}
+      <rect x="10" y="29" width="5" height="3" fill="#2a2a2a" />
+      <rect x="17" y="29" width="5" height="3" fill="#2a2a2a" />
+    </svg>
+  )
+}
+
 // ── PixelDesk ─────────────────────────────────────────────────────────────────
-function PixelDesk({ agent, selected, onClick, onToggle, deskLogs, isSystem }) {
-  const s   = STATUS_CFG[agent.status] || STATUS_CFG.idle
+function PixelDesk({ agent, selected, onClick, onToggle, deskLogs, isSystem, processAlive }) {
+  const rawStatus = processAlive === false ? 'offline' : agent.status
+  const s   = STATUS_CFG[rawStatus] || STATUS_CFG.idle
   const chair = agent.color || '#ef4444'
   const logs  = deskLogs || []
+  const isRunning = rawStatus === 'running'
+  const isOffline = rawStatus === 'offline' || rawStatus === 'stopped'
+  const tshirtIcon = agent.id === 'alfred-trading' ? '⚙' : agent.id === 'balthazar' ? '📰' : '🤖'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -74,9 +139,9 @@ function PixelDesk({ agent, selected, onClick, onToggle, deskLogs, isSystem }) {
           position: 'absolute', top: 4, right: 4, zIndex: 10,
           width: 9, height: 9, background: s.color,
           border: '1.5px solid rgba(0,0,0,0.5)', boxShadow: `0 0 6px ${s.color}`,
+          animation: s.pulse ? 'ws-pulse-dot 1.5s infinite' : 'none',
         }} />
 
-        {/* System icon */}
         {isSystem && (
           <div style={{ position: 'absolute', top: 5, left: 6, zIndex: 10, fontSize: 10, color: '#f59e0b' }}>⚙</div>
         )}
@@ -93,11 +158,12 @@ function PixelDesk({ agent, selected, onClick, onToggle, deskLogs, isSystem }) {
           <div style={{
             background: '#1a1a2e', border: '2px solid #2a2a4a',
             width: 110, height: 58, margin: '0 auto 6px', position: 'relative', overflow: 'hidden',
+            animation: isRunning ? 'ws-glow 2s ease-in-out infinite' : 'none',
           }}>
             {/* Log lines overlay (highest priority) */}
             {logs.length > 0 ? (
               <svg viewBox="0 0 110 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-                <rect width="110" height="58" fill="#020810" />
+                <rect width="110" height="58" fill={isRunning ? '#020e06' : '#020810'} />
                 {logs.slice(-3).map((line, i) => {
                   const clean = line.replace(/\x1B\[[0-9;]*m/g, '').replace(/^\[.*?\]\s*/, '').trim()
                   const color = /error/i.test(line) ? '#ef4444' : /warn/i.test(line) ? '#f59e0b' : '#22c55e'
@@ -108,31 +174,22 @@ function PixelDesk({ agent, selected, onClick, onToggle, deskLogs, isSystem }) {
                   )
                 })}
               </svg>
-            ) : agent.status === 'running' ? (
+            ) : isRunning ? (
               <svg viewBox="0 0 110 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
                 <rect width="110" height="58" fill="#041a0e" />
-                <polyline points="2,52 18,40 30,46 46,28 62,35 78,18 94,24 110,10" fill="none" stroke="#22c55e" strokeWidth="1.5" />
-                <polyline points="2,52 18,40 30,46 46,28 62,35 78,18 94,24 110,10 110,58 2,58" fill="rgba(34,197,94,0.07)" />
+                <polyline points="2,52 18,40 30,46 46,28 62,35 78,18 94,24 110,10" fill="none" stroke="#22c55e" strokeWidth="1.5" opacity="0.8" />
                 <text x="4" y="12" fill="#22c55e" fontSize="7" fontFamily="monospace" opacity="0.7">LIVE</text>
               </svg>
-            ) : agent.status === 'idle' ? (
+            ) : isOffline ? (
+              <svg viewBox="0 0 110 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+                <rect width="110" height="58" fill="#080808" />
+              </svg>
+            ) : (
               <svg viewBox="0 0 110 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
                 <rect width="110" height="58" fill="#0a0a12" />
                 <text x="14" y="33" fill="#3a4a6a" fontSize="8" fontFamily="monospace">STANDBY</text>
               </svg>
-            ) : agent.status === 'stopped' ? (
-              <svg viewBox="0 0 110 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-                <rect width="110" height="58" fill="#0d0808" />
-                <text x="36" y="37" fill="#3a1a1a" fontSize="13" fontFamily="monospace">OFF</text>
-              </svg>
-            ) : (
-              <svg viewBox="0 0 110 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-                <rect width="110" height="58" fill="#0d0a00" />
-                <text x="20" y="22" fill="#f59e0b" fontSize="7" fontFamily="monospace">WARNING</text>
-                <text x="44" y="50" fill="#f59e0b" fontSize="22" fontFamily="monospace">!</text>
-              </svg>
             )}
-            {/* Monitor stand */}
             <div style={{ position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)', width: 10, height: 4, background: '#2a2a3a' }} />
           </div>
 
@@ -155,12 +212,24 @@ function PixelDesk({ agent, selected, onClick, onToggle, deskLogs, isSystem }) {
           {[0, 1].map((i) => <div key={i} style={{ width: 8, height: 12, background: '#7a5030', border: '1px solid #5a3820' }} />)}
         </div>
 
-        {/* Chair */}
+        {/* Character or empty chair */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 4 }}>
-          <div style={{ width: 36, height: 10, background: chair, border: '2px solid rgba(0,0,0,0.3)', borderBottom: 'none', boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.2)' }} />
-          <div style={{ width: 46, height: 34, background: chair, border: '2px solid rgba(0,0,0,0.3)', boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.15), 0 3px 0 rgba(0,0,0,0.3)', position: 'relative' }}>
-            <div style={{ position: 'absolute', top: 8, left: 4, right: 4, height: 1, background: 'rgba(255,255,255,0.18)' }} />
-          </div>
+          {!isOffline ? (
+            <>
+              {/* Character sitting */}
+              <div style={{ marginBottom: -6, zIndex: 5, position: 'relative' }}>
+                <PixelCharacter color={chair} icon={tshirtIcon} animate={isRunning} />
+              </div>
+              {/* Chair behind character */}
+              <div style={{ width: 46, height: 20, background: chair, border: '2px solid rgba(0,0,0,0.3)', boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.15), 0 3px 0 rgba(0,0,0,0.3)', marginTop: -8 }} />
+            </>
+          ) : (
+            <>
+              {/* Empty chair */}
+              <div style={{ width: 36, height: 10, background: chair, border: '2px solid rgba(0,0,0,0.3)', borderBottom: 'none', boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.2)', opacity: 0.5 }} />
+              <div style={{ width: 46, height: 34, background: chair, border: '2px solid rgba(0,0,0,0.3)', boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.15), 0 3px 0 rgba(0,0,0,0.3)', opacity: 0.5 }} />
+            </>
+          )}
           <div style={{ width: 54, height: 5, background: '#7a7a8a', border: '1px solid #555', boxShadow: '0 2px 0 #444' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', width: 52, marginTop: 2 }}>
             {[0,1,2,3,4].map((i) => <div key={i} style={{ width: 7, height: 7, background: '#555', border: '1px solid #333', borderRadius: '50%' }} />)}
@@ -177,10 +246,14 @@ function PixelDesk({ agent, selected, onClick, onToggle, deskLogs, isSystem }) {
               {agent.role}
             </div>
           )}
-          <div style={{ fontFamily: 'monospace', fontSize: 9, color: s.color, marginTop: 2 }}>● {s.label}</div>
+          <div style={{
+            fontFamily: 'monospace', fontSize: 9, color: s.color, marginTop: 2,
+            animation: s.pulse ? 'ws-pulse-dot 1.5s infinite' : 'none',
+          }}>
+            ● {s.label}
+          </div>
         </div>
 
-        {/* Selection ring */}
         {selected && <div style={{ position: 'absolute', inset: -3, border: '2px solid #f59e0b', pointerEvents: 'none', boxShadow: '0 0 12px rgba(245,158,11,0.35)' }} />}
       </div>
 
@@ -209,7 +282,7 @@ function EmptySlot({ onClick }) {
   const [hover, setHover] = useState(false)
   return (
     <div onClick={onClick} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      style={{ width: 148, height: 240, border: `2px dashed ${hover ? '#f59e0b' : '#2a3a50'}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: hover ? 'rgba(245,158,11,0.04)' : 'transparent', transition: 'all 0.15s', gap: 10 }}
+      style={{ width: 148, height: 260, border: `2px dashed ${hover ? '#f59e0b' : '#2a3a50'}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: hover ? 'rgba(245,158,11,0.04)' : 'transparent', transition: 'all 0.15s', gap: 10 }}
     >
       <div style={{ width: 36, height: 36, border: `2px dashed ${hover ? '#f59e0b' : '#2a3a50'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: hover ? '#f59e0b' : '#2a3a50', transition: 'all 0.15s' }}>
         <Plus size={18} />
@@ -220,7 +293,7 @@ function EmptySlot({ onClick }) {
 }
 
 // ── BossDesk ──────────────────────────────────────────────────────────────────
-function BossDesk({ boss, onSave }) {
+function BossDesk({ boss, onSave, onDispatch, dispatching, tasks }) {
   const [objective, setObjective] = useState(boss?.currentObjective || '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -243,39 +316,72 @@ function BossDesk({ boss, onSave }) {
     finally { setSaving(false) }
   }
 
+  const todoCount = tasks.filter((t) => t.status === 'todo').length
+  const inProgressCount = tasks.filter((t) => t.status === 'in-progress').length
+  const assignments = boss?.assignments || []
+
   return (
     <div style={{
       background: 'linear-gradient(135deg, rgba(245,158,11,0.06) 0%, rgba(160,90,0,0.10) 100%)',
       borderBottom: '2px solid rgba(245,158,11,0.25)',
-      padding: '18px 28px 16px',
+      padding: '16px 28px 14px',
     }}>
-      {/* Boss header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-        <Crown size={18} color="#f59e0b" />
-        <div>
-          <div style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-            BABY BOSS
+      {/* Boss header with crown character */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+        <div style={{ position: 'relative' }}>
+          <svg width="48" height="48" viewBox="0 0 48 48">
+            {/* Crown */}
+            <polygon points="14,12 16,4 20,10 24,2 28,10 32,4 34,12" fill="#f59e0b" stroke="#b97a00" strokeWidth="0.5" />
+            <rect x="14" y="12" width="20" height="4" fill="#f59e0b" stroke="#b97a00" strokeWidth="0.5" />
+            {/* Head */}
+            <rect x="18" y="16" width="12" height="10" fill="#f5c6a0" stroke="#c48a60" strokeWidth="0.5" />
+            {/* Eyes */}
+            <rect x="20" y="20" width="2" height="2" fill="#2a2a3a" />
+            <rect x="26" y="20" width="2" height="2" fill="#2a2a3a" />
+            {/* Smile */}
+            <rect x="22" y="23" width="4" height="1" fill="#c48a60" />
+            {/* Body */}
+            <rect x="16" y="26" width="16" height="14" fill="#f59e0b" stroke="rgba(0,0,0,0.2)" strokeWidth="0.5" />
+            <text x="24" y="36" textAnchor="middle" fontSize="8" fill="white">👑</text>
+            {/* Arms */}
+            <rect x="10" y="27" width="6" height="8" fill="#f59e0b" />
+            <rect x="32" y="27" width="6" height="8" fill="#f59e0b" />
+            {/* Legs */}
+            <rect x="17" y="40" width="5" height="8" fill="#2a3a5a" />
+            <rect x="26" y="40" width="5" height="8" fill="#2a3a5a" />
+          </svg>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+              BABY BOSS
+            </span>
+            <span style={{ fontFamily: 'monospace', fontSize: 9, color: '#6b4420', letterSpacing: '0.06em', background: 'rgba(245,158,11,0.1)', padding: '2px 6px', border: '1px solid rgba(245,158,11,0.2)' }}>
+              CHEF DE PROJET
+            </span>
           </div>
-          <div style={{ fontFamily: 'monospace', fontSize: 9, color: '#6b4420', letterSpacing: '0.06em', marginTop: 1 }}>
-            ORCHESTRATOR · NON-DELETABLE
+          <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#64748b', marginTop: 3, display: 'flex', gap: 12 }}>
+            <span>📋 {todoCount} todo</span>
+            <span>🔄 {inProgressCount} in-progress</span>
+            {assignments.length > 0 && <span>📨 {assignments.length} assigned</span>}
           </div>
         </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ width: 7, height: 7, background: '#f59e0b', boxShadow: '0 0 6px #f59e0b', borderRadius: '50%' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 7, height: 7, background: '#f59e0b', boxShadow: '0 0 6px #f59e0b', borderRadius: '50%', animation: 'ws-pulse-dot 1.5s infinite' }} />
           <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#f59e0b' }}>ACTIVE</span>
         </div>
       </div>
 
-      {/* Objective input */}
+      {/* Objective + Dispatch */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
         <div style={{ flex: 1 }}>
-          <label style={{ display: 'block', fontFamily: 'monospace', fontSize: 9, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5 }}>
-            Current Objective
+          <label style={{ display: 'block', fontFamily: 'monospace', fontSize: 9, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+            Objectif actuel
           </label>
           <textarea
             value={objective}
             onChange={(e) => setObjective(e.target.value)}
-            placeholder="Define the boss objective… e.g. 'Maximize daily P&L while keeping risk below 5%'"
+            placeholder="Définir l'objectif du boss… ex: 'Maximiser le P&L en gardant le risque < 5%'"
             rows={2}
             style={{
               width: '100%', background: 'rgba(0,0,0,0.35)',
@@ -285,34 +391,64 @@ function BossDesk({ boss, onSave }) {
             }}
           />
         </div>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          style={{
-            background: saved ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.13)',
-            border: `1px solid ${saved ? 'rgba(34,197,94,0.4)' : 'rgba(245,158,11,0.35)'}`,
-            color: saved ? '#22c55e' : '#f59e0b',
-            fontFamily: 'monospace', fontSize: 11, padding: '8px 18px',
-            cursor: saving ? 'default' : 'pointer', letterSpacing: '0.06em', whiteSpace: 'nowrap',
-            marginBottom: 1,
-          }}
-        >
-          {saving ? '...' : saved ? '✓ Saved' : 'Save'}
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 1 }}>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{
+              background: saved ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.13)',
+              border: `1px solid ${saved ? 'rgba(34,197,94,0.4)' : 'rgba(245,158,11,0.35)'}`,
+              color: saved ? '#22c55e' : '#f59e0b',
+              fontFamily: 'monospace', fontSize: 11, padding: '6px 14px',
+              cursor: saving ? 'default' : 'pointer', whiteSpace: 'nowrap',
+            }}
+          >
+            {saving ? '...' : saved ? '✓ Saved' : 'Save'}
+          </button>
+          <button
+            onClick={onDispatch}
+            disabled={dispatching || todoCount === 0}
+            style={{
+              background: 'rgba(59,130,246,0.13)',
+              border: '1px solid rgba(59,130,246,0.35)',
+              color: todoCount === 0 ? '#4a5a70' : '#3b82f6',
+              fontFamily: 'monospace', fontSize: 10, padding: '5px 10px',
+              cursor: dispatching || todoCount === 0 ? 'default' : 'pointer',
+              display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap',
+              opacity: todoCount === 0 ? 0.5 : 1,
+            }}
+          >
+            <Rocket size={11} /> {dispatching ? '...' : 'Dispatch'}
+          </button>
+        </div>
       </div>
+
+      {/* Assignments display */}
+      {assignments.length > 0 && (
+        <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {assignments.map((a, i) => (
+            <div key={i} style={{
+              fontFamily: 'monospace', fontSize: 9, padding: '3px 8px',
+              background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)',
+              color: '#8aa8d0', display: 'flex', alignItems: 'center', gap: 4,
+            }}>
+              <span style={{ color: '#3b82f6' }}>→</span>
+              <span style={{ color: '#94a3b8' }}>{trunc(a.taskTitle, 20)}</span>
+              <span style={{ color: '#6a8ab0' }}>⇒ {a.agentName}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
 // ── DispatchArrows ────────────────────────────────────────────────────────────
-// Decorative arrows from Boss → Agents
 function DispatchArrows({ count }) {
   if (count === 0) return null
   return (
     <div style={{
       display: 'flex', justifyContent: 'center', gap: 28, padding: '8px 0',
-      borderLeft: '2px solid rgba(245,158,11,0.12)',
-      borderRight: '2px solid rgba(245,158,11,0.12)',
       background: 'rgba(245,158,11,0.02)',
     }}>
       {Array.from({ length: Math.min(count, 8) }).map((_, i) => (
@@ -332,7 +468,7 @@ function DispatchArrows({ count }) {
 }
 
 // ── AgentPanel ────────────────────────────────────────────────────────────────
-function AgentPanel({ agent, onClose, onUpdate, onDelete }) {
+function AgentPanel({ agent, onClose, onUpdate, onDelete, alfredData }) {
   const [logs, setLogs] = useState([])
   const [logsLoading, setLogsLoading] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -351,20 +487,26 @@ function AgentPanel({ agent, onClose, onUpdate, onDelete }) {
     finally { setLogsLoading(false) }
   }, [agent.id])
 
-  useEffect(() => { fetchLogs() }, [fetchLogs])
+  // Poll logs every 5s
+  useEffect(() => {
+    fetchLogs()
+    const interval = setInterval(fetchLogs, 5000)
+    return () => clearInterval(interval)
+  }, [fetchLogs])
 
   const toggleStatus = () => onUpdate?.(agent.id, { status: agent.status === 'running' ? 'stopped' : 'running' })
   const save = async () => { await onUpdate?.(agent.id, form); setEditing(false) }
 
   const Mono = (p) => ({ fontFamily: 'monospace', ...p })
+  const isAlfred = agent.id === 'alfred-trading'
 
   return (
-    <div style={{ width: 300, height: '100%', background: '#0d111a', borderLeft: '1px solid #1a2236', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+    <div style={{ width: 320, height: '100%', background: '#0d111a', borderLeft: '1px solid #1a2236', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 12px', borderBottom: '1px solid #1a2236' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {agent.isSystem && <Crown size={12} color="#f59e0b" />}
+            {agent.isSystem && <span style={{ fontSize: 12 }}>⚙</span>}
             <div style={{ width: 9, height: 9, background: s.color, boxShadow: `0 0 6px ${s.color}` }} />
             <span style={Mono({ fontSize: 13, fontWeight: 700, color: '#e2e8f0', textTransform: 'uppercase' })}>{agent.name}</span>
           </div>
@@ -382,28 +524,39 @@ function AgentPanel({ agent, onClose, onUpdate, onDelete }) {
               </div>
             </PanelSection>
 
-            <PanelSection label="Chair">
-              <div style={{ width: 22, height: 22, background: agent.color || '#ef4444', border: '2px solid rgba(255,255,255,0.12)' }} />
-            </PanelSection>
+            {/* Alfred-specific data */}
+            {isAlfred && alfredData && (
+              <PanelSection label="Alfred Live">
+                <div style={{ background: '#060810', border: '1px solid #1a2236', padding: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {[
+                    ['Bank', alfredData.bank ?? alfredData.balance, '#22c55e'],
+                    ['P&L Today', alfredData.pnl_today ?? alfredData.daily_pnl, '#3b82f6'],
+                    ['Regime', alfredData.regime ?? alfredData.market_regime, '#f59e0b'],
+                    ['Positions', (alfredData.open_positions ?? []).length, '#a855f7'],
+                  ].map(([label, val, color]) => (
+                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={Mono({ fontSize: 10, color: '#64748b' })}>{label}</span>
+                      <span style={Mono({ fontSize: 10, color, fontWeight: 700 })}>
+                        {val != null ? String(val) : '—'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </PanelSection>
+            )}
 
-            <PanelSection label="Created">
-              <div style={Mono({ fontSize: 11, color: '#475569' })}>
-                {agent.createdAt ? new Date(agent.createdAt).toLocaleString('fr-FR') : '—'}
-              </div>
-            </PanelSection>
-
-            <PanelSection label="Logs" extra={
+            <PanelSection label="Logs (live 5s)" extra={
               <button onClick={fetchLogs} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: 2 }}>
                 <RefreshCw size={11} className={logsLoading ? 'animate-spin' : ''} />
               </button>
             }>
-              <div style={{ background: '#060810', border: '1px solid #1a2236', height: 180, overflowY: 'auto', fontFamily: 'monospace', fontSize: 10 }}>
-                {logsLoading
+              <div style={{ background: '#060810', border: '1px solid #1a2236', height: 220, overflowY: 'auto', fontFamily: 'monospace', fontSize: 10 }}>
+                {logsLoading && logs.length === 0
                   ? <div style={{ padding: 10, color: '#64748b' }}>Loading...</div>
                   : logs.length === 0
                   ? <div style={{ padding: 10, color: '#2a3a50' }}>No logs found.</div>
                   : logs.map((line, i) => (
-                    <div key={i} style={{ padding: '2px 8px', color: /error/i.test(line) ? '#ef4444' : /warn/i.test(line) ? '#f59e0b' : '#64748b', borderBottom: '1px solid #0d111e', lineHeight: 1.6 }}>
+                    <div key={i} style={{ padding: '2px 8px', color: /error/i.test(line) ? '#ef4444' : /warn/i.test(line) ? '#f59e0b' : '#64748b', borderBottom: '1px solid #0d111e', lineHeight: 1.6, wordBreak: 'break-all' }}>
                       {line}
                     </div>
                   ))
@@ -436,7 +589,7 @@ function AgentPanel({ agent, onClose, onUpdate, onDelete }) {
         )}
       </div>
 
-      {/* Footer actions */}
+      {/* Footer */}
       <div style={{ padding: '12px 16px', borderTop: '1px solid #1a2236', display: 'flex', gap: 8 }}>
         {!editing ? (
           <>
@@ -453,7 +606,7 @@ function AgentPanel({ agent, onClose, onUpdate, onDelete }) {
             )}
             {agent.isSystem && (
               <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#4a5a70', padding: '7px 4px' }}>
-                System agent — read only
+                Agent système — lecture seule
               </div>
             )}
           </>
@@ -523,11 +676,6 @@ function CreateModal({ onClose, onCreate }) {
               ))}
             </div>
           </div>
-
-          {/* Live preview */}
-          <div style={{ borderTop: '1px solid #1a2236', paddingTop: 16, display: 'flex', justifyContent: 'center' }}>
-            <PixelDesk agent={{ ...form, status: 'idle', id: 'preview' }} selected={false} onClick={() => {}} />
-          </div>
         </div>
 
         <div style={{ display: 'flex', gap: 8, padding: '0 20px 20px', justifyContent: 'flex-end' }}>
@@ -546,35 +694,46 @@ function CreateModal({ onClose, onCreate }) {
 export default function Workspace() {
   const alfred = useStore((s) => s.alfred)
 
-  const [agents, setAgents]       = useState([])
-  const [boss, setBoss]           = useState(null)
-  const [loading, setLoading]     = useState(true)
-  const [selectedId, setSelectedId] = useState(null)
-  const [showCreate, setShowCreate] = useState(false)
-  const [error, setError]         = useState(null)
-  const [logsMap, setLogsMap]     = useState({}) // id → string[]
+  const [agents, setAgents]           = useState([])
+  const [boss, setBoss]               = useState(null)
+  const [tasks, setTasks]             = useState([])
+  const [loading, setLoading]         = useState(true)
+  const [selectedId, setSelectedId]   = useState(null)
+  const [showCreate, setShowCreate]   = useState(false)
+  const [error, setError]             = useState(null)
+  const [logsMap, setLogsMap]         = useState({})
+  const [processStatus, setProcessStatus] = useState({})
+  const [dispatching, setDispatching] = useState(false)
 
-  // Alfred injected as read-only TradingAgent
-  const alfredAgent = alfred ? {
+  // System agents (non-deletable)
+  const alfredAgent = {
     id:       'alfred-trading',
     name:     'Alfred',
-    role:     'Trading Agent',
+    role:     'Trading Agent — Polymarket 24/7',
     color:    '#f59e0b',
-    status:   alfred.status === 'running' ? 'running'
-              : alfred.status === 'error'   ? 'error'
-              : 'idle',
+    status:   processStatus.alfred ? 'running' : alfred?.status === 'running' ? 'running' : 'idle',
     isSystem: true,
-  } : null
+  }
+
+  const balthazarAgent = {
+    id:       'balthazar',
+    name:     'Balthazar',
+    role:     'Coding — site web & apps via GitHub',
+    color:    '#3b82f6',
+    status:   processStatus.balthazar ? 'running' : 'idle',
+    isSystem: true,
+  }
 
   const fetchAll = useCallback(async () => {
     try {
-      const [agentsRes, bossRes] = await Promise.all([
+      const [agentsRes, bossRes, tasksRes] = await Promise.all([
         fetch('/api/agents'),
         fetch('/api/boss').catch(() => null),
+        fetch('/api/tasks').catch(() => null),
       ])
-      const agentsData = await agentsRes.json()
-      setAgents(Array.isArray(agentsData) ? agentsData : [])
+      setAgents(Array.isArray(await agentsRes.clone().json().catch(() => [])) ? await agentsRes.json() : [])
       if (bossRes?.ok) setBoss(await bossRes.json())
+      if (tasksRes?.ok) setTasks(await tasksRes.json())
       setError(null)
     } catch (e) { setError(e.message) }
     finally { setLoading(false) }
@@ -582,12 +741,22 @@ export default function Workspace() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
-  // Fetch logs for all desks (last 3 lines shown on monitor screen)
+  // Poll process status every 10s
   useEffect(() => {
-    const ids = [
-      ...(alfredAgent ? [alfredAgent.id] : []),
-      ...agents.map((a) => a.id),
-    ]
+    const poll = async () => {
+      try {
+        const r = await fetch('/api/agents/status')
+        setProcessStatus(await r.json())
+      } catch { /* ignore */ }
+    }
+    poll()
+    const interval = setInterval(poll, 10_000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Fetch desk logs
+  useEffect(() => {
+    const ids = ['alfred-trading', 'balthazar', ...agents.map((a) => a.id)]
     if (!ids.length) return
     const run = async () => {
       const pairs = await Promise.all(
@@ -603,7 +772,7 @@ export default function Workspace() {
     }
     run()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agents.length, !!alfred])
+  }, [agents.length, processStatus.alfred, processStatus.balthazar])
 
   const handleCreate = async (form) => {
     try {
@@ -643,12 +812,30 @@ export default function Workspace() {
     if (agent) handleUpdate(id, { status: agent.status === 'running' ? 'stopped' : 'running' })
   }
 
-  const allDesks = [...(alfredAgent ? [alfredAgent] : []), ...agents]
+  const handleDispatch = async () => {
+    setDispatching(true)
+    try {
+      const r = await fetch('/api/boss/dispatch', { method: 'POST' })
+      const result = await r.json()
+      // Refresh boss + tasks
+      const [bossRes, tasksRes] = await Promise.all([
+        fetch('/api/boss'),
+        fetch('/api/tasks'),
+      ])
+      setBoss(await bossRes.json())
+      setTasks(await tasksRes.json())
+      if (result.dispatched > 0) {
+        alert(`Baby Boss a dispatché ${result.dispatched} tâche(s) !`)
+      }
+    } catch (e) { alert('Dispatch error: ' + e.message) }
+    finally { setDispatching(false) }
+  }
+
+  const allDesks = [alfredAgent, balthazarAgent, ...agents]
   const selected = allDesks.find((a) => a.id === selectedId)
 
   return (
     <div style={{ height: '100%', display: 'flex', overflow: 'hidden', background: '#080b12' }}>
-      {/* ── Room ── */}
       <div style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
 
         {/* Top wall */}
@@ -682,25 +869,20 @@ export default function Workspace() {
         </div>
 
         {/* Boss section */}
-        <BossDesk boss={boss} onSave={setBoss} />
+        <BossDesk boss={boss} onSave={setBoss} onDispatch={handleDispatch} dispatching={dispatching} tasks={tasks} />
 
-        {/* Dispatch arrows (decorative — future message-passing channels) */}
+        {/* Dispatch arrows */}
         <DispatchArrows count={allDesks.length} />
 
-        {/* Floor / agent grid */}
+        {/* Floor */}
         <div style={{
-          minHeight: 'calc(100vh - 280px)',
+          minHeight: 'calc(100vh - 320px)',
           background: '#52606e',
           backgroundImage: `linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)`,
           backgroundSize: '48px 48px',
           padding: '44px 44px 80px',
           position: 'relative',
         }}>
-          {/* Floor watermarks */}
-          {[...Array(4)].map((_, r) => [...Array(6)].map((_, c) => (
-            <div key={`${r}-${c}`} style={{ position: 'absolute', top: 80 + r * 130, left: 90 + c * 130, fontFamily: 'monospace', fontSize: 8, color: 'rgba(255,255,255,0.04)', userSelect: 'none', letterSpacing: '0.1em' }}>CCr</div>
-          )))}
-
           {error && (
             <div style={{ marginBottom: 24, padding: '10px 16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', fontFamily: 'monospace', fontSize: 11, display: 'flex', gap: 8, alignItems: 'center' }}>
               <AlertCircle size={13} /> {error} — <code>npm run server</code>
@@ -720,6 +902,7 @@ export default function Workspace() {
                     onToggle={agent.isSystem ? undefined : handleToggle}
                     deskLogs={logsMap[agent.id]}
                     isSystem={agent.isSystem}
+                    processAlive={agent.isSystem ? processStatus[agent.id === 'alfred-trading' ? 'alfred' : 'balthazar'] : undefined}
                   />
                 ))}
                 <EmptySlot onClick={() => setShowCreate(true)} />
@@ -744,10 +927,10 @@ export default function Workspace() {
           onClose={() => setSelectedId(null)}
           onUpdate={selected.isSystem ? undefined : handleUpdate}
           onDelete={selected.isSystem ? undefined : handleDelete}
+          alfredData={alfred}
         />
       )}
 
-      {/* Create modal */}
       {showCreate && <CreateModal onClose={() => setShowCreate(false)} onCreate={handleCreate} />}
     </div>
   )
