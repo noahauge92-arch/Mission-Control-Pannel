@@ -1,285 +1,401 @@
-import React, { useMemo } from 'react'
+import React from 'react'
 import {
-  Bot, ListTodo, Zap, Activity, TrendingUp, AlertTriangle,
-  CheckCircle2, Clock, XCircle, Cpu, MemoryStick,
+  DollarSign, TrendingUp, TrendingDown, ShieldAlert,
+  Activity, BarChart2, Clock, AlertCircle, CheckCircle2,
+  RefreshCw, WifiOff, ChevronRight, Target, XCircle,
 } from 'lucide-react'
-import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend,
-} from 'recharts'
 import { useStore } from '../../store/useStore'
-import SystemMap from './SystemMap'
-import ActivityFeed from './ActivityFeed'
 import clsx from 'clsx'
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const fmt$ = (v) => {
+  if (v == null) return '—'
+  const n = Number(v)
+  if (isNaN(n)) return '—'
+  const abs = Math.abs(n)
+  const str = abs >= 1000 ? `$${(abs / 1000).toFixed(2)}k` : `$${abs.toFixed(2)}`
+  return n < 0 ? `-${str}` : `+${str}`
+}
+
+const fmtBank = (v) => {
+  if (v == null) return '—'
+  const n = Number(v)
+  if (isNaN(n)) return '—'
+  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+const fmtPct = (v) => {
+  if (v == null) return '—'
+  const n = Number(v)
+  if (isNaN(n)) return '—'
+  return `${(n * 100 <= 1 ? (n * 100).toFixed(1) : n.toFixed(1))}%`
+}
+
+const fmtTime = (v) => {
+  if (!v) return '—'
+  try { return new Date(v).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }
+  catch { return String(v) }
+}
+
+const REGIME_CONFIG = {
+  NORMAL:   { color: '#22c55e', bg: 'rgba(34,197,94,0.1)',   border: 'rgba(34,197,94,0.25)',  icon: '●' },
+  CAUTION:  { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.25)', icon: '▲' },
+  CRITICAL: { color: '#ef4444', bg: 'rgba(239,68,68,0.1)',   border: 'rgba(239,68,68,0.25)',  icon: '■' },
+  RECOVERY: { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)',  border: 'rgba(59,130,246,0.25)', icon: '↻' },
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const agents = useStore((s) => s.agents)
-  const tasks = useStore((s) => s.tasks)
-  const skills = useStore((s) => s.skills)
-  const logs = useStore((s) => s.logs)
-  const resourceHistory = useStore((s) => s.resourceHistory)
-  const clawbotRunning = useStore((s) => s.clawbotRunning)
+  const alfred      = useStore((s) => s.alfred)
+  const loading     = useStore((s) => s.alfredLoading)
+  const error       = useStore((s) => s.alfredError)
+  const lastUpdated = useStore((s) => s.alfredLastUpdated)
 
-  const stats = useMemo(() => {
-    const onlineAgents  = agents.filter((a) => a.status === 'online' || a.status === 'busy').length
-    const errorAgents   = agents.filter((a) => a.status === 'error').length
-    const runningTasks  = tasks.filter((t) => t.status === 'running').length
-    const completeTasks = tasks.filter((t) => t.status === 'complete').length
-    const failedTasks   = tasks.filter((t) => t.status === 'failed').length
-    const installedSkills = skills.filter((s) => s.installed).length
-    const totalTasks    = agents.reduce((sum, a) => sum + a.tasksCompleted, 0)
-    const systemHealth  = errorAgents === 0
-      ? 100
-      : Math.round(((agents.length - errorAgents) / agents.length) * 100)
-    return { onlineAgents, errorAgents, runningTasks, completeTasks, failedTasks, installedSkills, totalTasks, systemHealth }
-  }, [agents, tasks, skills])
+  if (loading) return <LoadingState />
+  if (error && !alfred) return <ErrorState error={error} />
 
-  const latest = resourceHistory[resourceHistory.length - 1] || { cpu: 0, mem: 0, net: 0 }
+  // — Safe accessors with fallbacks —
+  const bank       = alfred?.bank        ?? alfred?.balance      ?? alfred?.capital
+  const pnlToday   = alfred?.pnl_today   ?? alfred?.daily_pnl   ?? alfred?.pnl_24h
+  const pnlAllTime = alfred?.pnl_alltime ?? alfred?.total_pnl    ?? alfred?.cumulative_pnl
+  const regime     = (alfred?.regime     ?? alfred?.market_regime ?? '—').toString().toUpperCase()
+  const winRaw     = alfred?.win_rate    ?? alfred?.winrate       ?? alfred?.win_ratio
+  const totalTrades = alfred?.total_trades ?? alfred?.trades_count ?? 0
+  const openPositions = alfred?.open_positions ?? alfred?.positions ?? alfred?.active_positions ?? []
+  const skipReasons   = alfred?.skip_reasons   ?? alfred?.skipped    ?? {}
+  const lastTrades    = alfred?.last_trades    ?? alfred?.recent_trades ?? alfred?.trades ?? []
+  const botStatus     = alfred?.status         ?? alfred?.bot_status   ?? 'unknown'
+  const winRate       = winRaw != null
+    ? (Number(winRaw) <= 1 ? Number(winRaw) * 100 : Number(winRaw))
+    : null
+
+  const rc = REGIME_CONFIG[regime] || { color: '#64748b', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.2)', icon: '?' }
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-4 mc-grid-bg">
-      {/* ── Metric Cards ── */}
-      <div className="grid grid-cols-4 gap-3">
+      {/* ── Error banner (data stale but available) ── */}
+      {error && alfred && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+          <AlertCircle size={13} className="text-amber-400 shrink-0" />
+          <span className="text-[11px] text-amber-300">{error} — showing last known data</span>
+          {lastUpdated && (
+            <span className="ml-auto text-[10px] text-mc-muted font-mono">
+              Last sync: {fmtTime(lastUpdated)}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Row 1 — Key metrics ── */}
+      <div className="grid grid-cols-5 gap-3">
+        {/* Bank */}
         <MetricCard
-          icon={<Bot size={18} />}
-          label="Active Agents"
-          value={`${stats.onlineAgents}/${agents.length}`}
-          sub={stats.errorAgents > 0 ? `${stats.errorAgents} error` : 'All healthy'}
-          color="blue"
-          alert={stats.errorAgents > 0}
+          icon={<DollarSign size={17} />}
+          label="Bank"
+          value={fmtBank(bank)}
+          sub={`Statut: ${botStatus}`}
+          color="green"
+          big
         />
+        {/* P&L Today */}
         <MetricCard
-          icon={<ListTodo size={18} />}
-          label="Running Tasks"
-          value={stats.runningTasks}
-          sub={`${stats.completeTasks} complete · ${stats.failedTasks} failed`}
-          color="amber"
-          alert={stats.failedTasks > 0}
+          icon={<Activity size={17} />}
+          label="P&L Aujourd'hui"
+          value={fmt$(pnlToday)}
+          sub="depuis 00:00"
+          color={Number(pnlToday) >= 0 ? 'green' : 'red'}
+          pnl
         />
+        {/* P&L All-Time */}
         <MetricCard
-          icon={<Zap size={18} />}
-          label="Skills Installed"
-          value={stats.installedSkills}
-          sub={`${skills.length - stats.installedSkills} available`}
-          color="purple"
+          icon={<TrendingUp size={17} />}
+          label="P&L All-Time"
+          value={fmt$(pnlAllTime)}
+          sub={`${totalTrades} trades`}
+          color={Number(pnlAllTime) >= 0 ? 'green' : 'red'}
+          pnl
         />
+        {/* Win Rate */}
         <MetricCard
-          icon={<TrendingUp size={18} />}
-          label="System Health"
-          value={`${stats.systemHealth}%`}
-          sub={clawbotRunning ? 'All systems nominal' : 'System offline'}
-          color={stats.systemHealth === 100 ? 'green' : stats.systemHealth > 50 ? 'amber' : 'red'}
+          icon={<Target size={17} />}
+          label="Win Rate"
+          value={winRate != null ? `${winRate.toFixed(1)}%` : '—'}
+          sub={`${totalTrades} trades total`}
+          color={winRate >= 55 ? 'green' : winRate >= 45 ? 'amber' : 'red'}
         />
+        {/* Regime */}
+        <div
+          className="rounded-lg p-4 border mc-hover relative overflow-hidden"
+          style={{ background: rc.bg, borderColor: rc.border }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <ShieldAlert size={17} style={{ color: rc.color }} />
+          </div>
+          <div
+            className="text-2xl font-bold font-mono mb-0.5 tracking-wider"
+            style={{ color: rc.color }}
+          >
+            {rc.icon} {regime}
+          </div>
+          <div className="text-[11px] font-semibold text-mc-muted uppercase tracking-wide">Régime</div>
+          {lastUpdated && (
+            <div className="text-[9px] text-mc-subtle mt-1 font-mono">
+              sync {fmtTime(lastUpdated)}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* ── Row 2: System Map + Activity Feed ── */}
-      <div className="grid grid-cols-5 gap-3" style={{ height: '280px' }}>
-        <div className="col-span-3 mc-panel flex flex-col">
+      {/* ── Row 2 — Positions + Skip reasons ── */}
+      <div className="grid grid-cols-3 gap-3">
+        {/* Open Positions */}
+        <div className="col-span-2 mc-panel flex flex-col" style={{ minHeight: '200px' }}>
           <div className="mc-panel-header">
             <div className="flex items-center gap-2">
-              <Activity size={13} className="text-amber-400" />
-              <span className="text-[12px] font-semibold text-mc-text">System Map</span>
+              <BarChart2 size={13} className="text-amber-400" />
+              <span className="text-[12px] font-semibold text-mc-text">Positions Ouvertes</span>
+              <span className="tag tag-amber text-[10px]">{openPositions.length}</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className={clsx('status-dot', clawbotRunning ? 'online' : 'offline')} />
-              <span className="text-[10px] font-mono text-mc-muted">
-                {clawbotRunning ? 'LIVE' : 'OFFLINE'}
-              </span>
-            </div>
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <SystemMap agents={agents} clawbotRunning={clawbotRunning} />
-          </div>
-        </div>
-
-        <div className="col-span-2 mc-panel flex flex-col">
-          <div className="mc-panel-header">
-            <div className="flex items-center gap-2">
-              <Activity size={13} className="text-amber-400" />
-              <span className="text-[12px] font-semibold text-mc-text">Activity Feed</span>
-            </div>
-            <span className="text-[10px] font-mono text-green-400 animate-pulse">● LIVE</span>
           </div>
           <div className="flex-1 overflow-y-auto">
-            <ActivityFeed logs={logs} agents={agents} />
-          </div>
-        </div>
-      </div>
-
-      {/* ── Row 3: Resource Charts + Task Status + Agent Quick-View ── */}
-      <div className="grid grid-cols-5 gap-3" style={{ height: '240px' }}>
-        {/* Resource charts */}
-        <div className="col-span-3 mc-panel flex flex-col">
-          <div className="mc-panel-header">
-            <div className="flex items-center gap-2">
-              <Cpu size={13} className="text-amber-400" />
-              <span className="text-[12px] font-semibold text-mc-text">Resource Monitor</span>
-            </div>
-            <div className="flex items-center gap-3 text-[10px] font-mono">
-              <span className="text-blue-400">CPU {latest.cpu.toFixed(0)}%</span>
-              <span className="text-purple-400">MEM {latest.mem.toFixed(0)}%</span>
-              <span className="text-cyan-400">NET {latest.net.toFixed(0)}%</span>
-            </div>
-          </div>
-          <div className="flex-1 px-2 pt-2 pb-1">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={resourceHistory} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
-                <defs>
-                  <linearGradient id="cpuGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="memGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#a855f7" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="netGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#06b6d4" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1a2744" vertical={false} />
-                <XAxis dataKey="t" hide />
-                <YAxis domain={[0, 100]} tick={{ fill: '#475569', fontSize: 9 }} tickLine={false} axisLine={false} />
-                <Tooltip
-                  contentStyle={{ background: '#0e1528', border: '1px solid #1a2744', borderRadius: '6px', fontSize: '11px' }}
-                  labelStyle={{ color: '#64748b' }}
-                  formatter={(v, n) => [`${v.toFixed(1)}%`, n.toUpperCase()]}
-                />
-                <Area type="monotone" dataKey="cpu" stroke="#3b82f6" strokeWidth={1.5} fill="url(#cpuGrad)" name="cpu" dot={false} />
-                <Area type="monotone" dataKey="mem" stroke="#a855f7" strokeWidth={1.5} fill="url(#memGrad)" name="mem" dot={false} />
-                <Area type="monotone" dataKey="net" stroke="#06b6d4" strokeWidth={1.5} fill="url(#netGrad)" name="net" dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Task status panel */}
-        <div className="col-span-2 mc-panel flex flex-col">
-          <div className="mc-panel-header">
-            <div className="flex items-center gap-2">
-              <ListTodo size={13} className="text-amber-400" />
-              <span className="text-[12px] font-semibold text-mc-text">Task Status</span>
-            </div>
-          </div>
-          <div className="flex-1 overflow-y-auto p-3 space-y-2">
-            {tasks.map((task) => (
-              <div key={task.id} className="flex items-center gap-2.5 py-1.5 border-b border-mc-border/50 last:border-0">
-                <TaskStatusIcon status={task.status} />
-                <div className="flex-1 min-w-0">
-                  <div className="text-[11px] text-mc-text font-medium truncate">{task.name}</div>
-                  <div className="text-[10px] text-mc-muted">
-                    Agent #{task.assignedAgentId} · {task.priority}
-                  </div>
-                </div>
-                {task.status === 'running' && (
-                  <div className="text-[10px] font-mono text-amber-400">{task.progress}%</div>
-                )}
+            {openPositions.length === 0 ? (
+              <div className="flex items-center justify-center h-full py-8 text-[12px] text-mc-muted">
+                Aucune position ouverte
               </div>
-            ))}
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-mc-border">
+                    {['Marché', 'Side', 'Montant', 'Entry', 'Current', 'P&L'].map((h) => (
+                      <th key={h} className="px-3 py-2 text-left text-[10px] font-semibold text-mc-muted uppercase tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {openPositions.map((pos, i) => {
+                    const posName = pos.market ?? pos.question ?? pos.title ?? `Position ${i + 1}`
+                    const side = (pos.side ?? pos.outcome ?? '?').toString().toUpperCase()
+                    const amount = pos.amount ?? pos.size ?? pos.stake
+                    const entry = pos.entry_price ?? pos.entry ?? pos.price
+                    const current = pos.current_price ?? pos.current ?? pos.mark_price
+                    const pnl = pos.pnl ?? pos.unrealized_pnl ?? pos.profit
+
+                    return (
+                      <tr key={i} className="border-b border-mc-border/40 hover:bg-mc-panel/50 transition-colors">
+                        <td className="px-3 py-2.5">
+                          <div className="text-[11px] text-mc-text max-w-[220px] truncate" title={posName}>
+                            {posName}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className={clsx('tag text-[10px]', side === 'YES' ? 'tag-green' : side === 'NO' ? 'tag-red' : 'tag-gray')}>
+                            {side}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-[11px] font-mono text-mc-text">
+                          {amount != null ? `$${Number(amount).toFixed(2)}` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-[11px] font-mono text-mc-muted">
+                          {entry != null ? `${(Number(entry) * 100).toFixed(1)}¢` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-[11px] font-mono text-mc-muted">
+                          {current != null ? `${(Number(current) * 100).toFixed(1)}¢` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-[11px] font-mono">
+                          {pnl != null ? (
+                            <span className={Number(pnl) >= 0 ? 'text-green-400' : 'text-red-400'}>
+                              {fmt$(pnl)}
+                            </span>
+                          ) : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/* Skip reasons */}
+        <div className="mc-panel flex flex-col">
+          <div className="mc-panel-header">
+            <div className="flex items-center gap-2">
+              <XCircle size={13} className="text-amber-400" />
+              <span className="text-[12px] font-semibold text-mc-text">Skip Reasons</span>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3">
+            {Object.keys(skipReasons).length === 0 ? (
+              <div className="text-[11px] text-mc-muted text-center py-4">Aucun skip</div>
+            ) : (
+              <div className="space-y-2">
+                {Object.entries(skipReasons)
+                  .sort(([, a], [, b]) => Number(b) - Number(a))
+                  .map(([reason, count]) => {
+                    const total = Object.values(skipReasons).reduce((s, v) => s + Number(v), 0)
+                    const pct = total > 0 ? (Number(count) / total) * 100 : 0
+                    return (
+                      <div key={reason}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[11px] text-mc-muted capitalize">
+                            {reason.replace(/_/g, ' ')}
+                          </span>
+                          <span className="text-[11px] font-mono text-amber-300">{count}</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-mc-border overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{ width: `${pct}%`, background: '#f59e0b', opacity: 0.7 }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* ── Row 4: Agent Quick-view ── */}
-      <div className="mc-panel">
+      {/* ── Row 3 — Last trades ── */}
+      <div className="mc-panel flex flex-col">
         <div className="mc-panel-header">
           <div className="flex items-center gap-2">
-            <Bot size={13} className="text-amber-400" />
-            <span className="text-[12px] font-semibold text-mc-text">Agent Quick-View</span>
+            <Clock size={13} className="text-amber-400" />
+            <span className="text-[12px] font-semibold text-mc-text">Derniers Trades</span>
           </div>
+          <span className="text-[10px] text-mc-muted font-mono">
+            {lastTrades.length} entrée{lastTrades.length !== 1 ? 's' : ''}
+          </span>
         </div>
-        <div className="p-3 grid grid-cols-5 gap-3">
-          {agents.map((agent) => (
-            <AgentQuickCard key={agent.id} agent={agent} />
-          ))}
+        <div className="overflow-x-auto">
+          {lastTrades.length === 0 ? (
+            <div className="text-center py-6 text-[12px] text-mc-muted">Aucun trade récent</div>
+          ) : (
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-mc-border">
+                  {['Heure', 'Marché', 'Side', 'Montant', 'Entry', 'Exit', 'P&L', 'Résultat'].map((h) => (
+                    <th key={h} className="px-3 py-2 text-left text-[10px] font-semibold text-mc-muted uppercase tracking-wide whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {lastTrades.slice(0, 20).map((trade, i) => {
+                  const name = trade.market ?? trade.question ?? trade.title ?? `Trade ${i + 1}`
+                  const side = (trade.side ?? trade.outcome ?? '?').toString().toUpperCase()
+                  const amount = trade.amount ?? trade.size ?? trade.stake
+                  const entry = trade.entry_price ?? trade.entry ?? trade.buy_price
+                  const exit = trade.exit_price ?? trade.exit ?? trade.sell_price
+                  const pnl = trade.pnl ?? trade.profit ?? trade.realized_pnl
+                  const result = trade.status ?? trade.result ?? (Number(pnl) >= 0 ? 'won' : 'lost')
+                  const ts = trade.timestamp ?? trade.time ?? trade.closed_at ?? trade.date
+
+                  return (
+                    <tr key={i} className="border-b border-mc-border/40 hover:bg-mc-panel/50 transition-colors">
+                      <td className="px-3 py-2.5 text-[10px] font-mono text-mc-subtle whitespace-nowrap">
+                        {fmtTime(ts)}
+                      </td>
+                      <td className="px-3 py-2.5 max-w-[200px]">
+                        <div className="text-[11px] text-mc-text truncate" title={name}>{name}</div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className={clsx('tag text-[10px]', side === 'YES' ? 'tag-green' : side === 'NO' ? 'tag-red' : 'tag-gray')}>
+                          {side}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-[11px] font-mono text-mc-muted">
+                        {amount != null ? `$${Number(amount).toFixed(2)}` : '—'}
+                      </td>
+                      <td className="px-3 py-2.5 text-[11px] font-mono text-mc-muted">
+                        {entry != null ? `${(Number(entry) * 100).toFixed(1)}¢` : '—'}
+                      </td>
+                      <td className="px-3 py-2.5 text-[11px] font-mono text-mc-muted">
+                        {exit != null ? `${(Number(exit) * 100).toFixed(1)}¢` : '—'}
+                      </td>
+                      <td className="px-3 py-2.5 text-[11px] font-mono">
+                        {pnl != null ? (
+                          <span className={Number(pnl) >= 0 ? 'text-green-400' : 'text-red-400'}>
+                            {fmt$(pnl)}
+                          </span>
+                        ) : '—'}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <ResultBadge result={result} />
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
   )
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// ── Sub-components ─────────────────────────────────────────────────────────────
 
-function MetricCard({ icon, label, value, sub, color, alert }) {
+function MetricCard({ icon, label, value, sub, color, big, pnl }) {
   const colors = {
-    blue:   { bg: 'rgba(59,130,246,0.08)',  border: 'rgba(59,130,246,0.25)',  icon: 'text-blue-400',   val: 'text-blue-300' },
-    amber:  { bg: 'rgba(245,158,11,0.08)',  border: 'rgba(245,158,11,0.25)',  icon: 'text-amber-400',  val: 'text-amber-300' },
-    green:  { bg: 'rgba(34,197,94,0.08)',   border: 'rgba(34,197,94,0.25)',   icon: 'text-green-400',  val: 'text-green-300' },
-    red:    { bg: 'rgba(239,68,68,0.08)',   border: 'rgba(239,68,68,0.25)',   icon: 'text-red-400',    val: 'text-red-300' },
-    purple: { bg: 'rgba(168,85,247,0.08)',  border: 'rgba(168,85,247,0.25)',  icon: 'text-purple-400', val: 'text-purple-300' },
+    green:  { bg: 'rgba(34,197,94,0.08)',   border: 'rgba(34,197,94,0.25)',   iconC: 'text-green-400',  valC: 'text-green-300' },
+    red:    { bg: 'rgba(239,68,68,0.08)',   border: 'rgba(239,68,68,0.25)',   iconC: 'text-red-400',    valC: 'text-red-300' },
+    amber:  { bg: 'rgba(245,158,11,0.08)',  border: 'rgba(245,158,11,0.25)',  iconC: 'text-amber-400',  valC: 'text-amber-300' },
+    blue:   { bg: 'rgba(59,130,246,0.08)',  border: 'rgba(59,130,246,0.25)',  iconC: 'text-blue-400',   valC: 'text-blue-300' },
   }
-  const c = colors[color] || colors.blue
+  const c = colors[color] || colors.green
+
   return (
-    <div
-      className="rounded-lg p-4 border mc-hover relative overflow-hidden"
-      style={{ background: c.bg, borderColor: c.border }}
-    >
-      {alert && (
-        <div className="absolute top-2 right-2">
-          <AlertTriangle size={11} className="text-red-400 animate-pulse" />
-        </div>
-      )}
-      <div className={clsx('mb-2', c.icon)}>{icon}</div>
-      <div className={clsx('text-2xl font-bold font-mono mb-0.5', c.val)}>{value}</div>
+    <div className="rounded-lg p-4 border mc-hover" style={{ background: c.bg, borderColor: c.border }}>
+      <div className={clsx('mb-2', c.iconC)}>{icon}</div>
+      <div className={clsx('font-bold font-mono mb-0.5', c.valC, big ? 'text-2xl' : 'text-xl')}>
+        {value}
+      </div>
       <div className="text-[11px] font-semibold text-mc-muted uppercase tracking-wide">{label}</div>
       <div className="text-[10px] text-mc-subtle mt-1">{sub}</div>
     </div>
   )
 }
 
-function TaskStatusIcon({ status }) {
-  const icons = {
-    running: <Activity size={12} className="text-amber-400 animate-pulse" />,
-    complete: <CheckCircle2 size={12} className="text-green-400" />,
-    failed:  <XCircle size={12} className="text-red-400" />,
-    pending: <Clock size={12} className="text-mc-muted" />,
-  }
-  return icons[status] || icons.pending
+function ResultBadge({ result }) {
+  const r = (result ?? '').toString().toLowerCase()
+  if (r === 'won' || r === 'win' || r === 'success')
+    return <span className="tag tag-green text-[10px]">✓ Gagné</span>
+  if (r === 'lost' || r === 'loss' || r === 'fail' || r === 'failed')
+    return <span className="tag tag-red text-[10px]">✗ Perdu</span>
+  if (r === 'open' || r === 'running')
+    return <span className="tag tag-amber text-[10px]">⊙ Ouvert</span>
+  return <span className="tag tag-gray text-[10px]">{result || '?'}</span>
 }
 
-function AgentQuickCard({ agent }) {
-  const statusColors = {
-    online:  { dot: 'online',  ring: 'border-green-500/20',  bg: 'rgba(34,197,94,0.05)' },
-    busy:    { dot: 'busy',    ring: 'border-amber-500/20',  bg: 'rgba(245,158,11,0.05)' },
-    offline: { dot: 'offline', ring: 'border-mc-border',     bg: 'transparent' },
-    error:   { dot: 'error',   ring: 'border-red-500/20',    bg: 'rgba(239,68,68,0.05)' },
-  }
-  const s = statusColors[agent.status] || statusColors.offline
-
+function LoadingState() {
   return (
-    <div
-      className={clsx('rounded-lg p-3 border', s.ring)}
-      style={{ background: s.bg }}
-    >
-      <div className="flex items-center gap-2 mb-2">
-        <span className={clsx('status-dot', s.dot)} />
-        <span className="text-[11px] font-semibold text-mc-text truncate">{agent.name}</span>
-      </div>
-      <div className="text-[10px] text-mc-muted truncate mb-2">
-        {agent.currentTask || 'No active task'}
-      </div>
-      <div className="space-y-1">
-        <MiniBar label="CPU" value={agent.cpu} color="#3b82f6" />
-        <MiniBar label="MEM" value={agent.memory} color="#a855f7" />
+    <div className="h-full flex items-center justify-center mc-grid-bg">
+      <div className="text-center">
+        <RefreshCw size={32} className="text-amber-400 mx-auto mb-3 animate-spin" />
+        <div className="text-mc-muted text-sm">Connexion à Alfred...</div>
+        <div className="text-mc-subtle text-[11px] font-mono mt-1">GET /api/alfred</div>
       </div>
     </div>
   )
 }
 
-function MiniBar({ label, value, color }) {
+function ErrorState({ error }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-[9px] font-mono text-mc-muted w-6">{label}</span>
-      <div className="flex-1 h-1 rounded-full bg-mc-border overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-500"
-          style={{ width: `${value}%`, background: color, opacity: 0.8 }}
-        />
+    <div className="h-full flex items-center justify-center mc-grid-bg">
+      <div className="text-center max-w-md">
+        <WifiOff size={36} className="text-red-400 mx-auto mb-3" />
+        <div className="text-mc-text text-sm font-semibold mb-1">Impossible de contacter Alfred</div>
+        <div className="text-red-300 text-[11px] font-mono bg-red-500/10 border border-red-500/20 rounded p-3 mb-3">
+          {error}
+        </div>
+        <div className="text-mc-muted text-[11px]">
+          Vérifie que le serveur tourne :<br />
+          <code className="text-amber-300">npm run server</code>
+        </div>
       </div>
-      <span className="text-[9px] font-mono w-6 text-right" style={{ color }}>
-        {value.toFixed(0)}%
-      </span>
     </div>
   )
 }

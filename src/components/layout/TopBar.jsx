@@ -1,199 +1,120 @@
 import React, { useState } from 'react'
-import {
-  Power,
-  AlertTriangle,
-  Activity,
-  Bell,
-  Settings,
-  Search,
-  ChevronDown,
-  Cpu,
-  MemoryStick,
-  Wifi,
-} from 'lucide-react'
+import { AlertCircle, RefreshCw, Bell, Settings, Power, ShieldAlert } from 'lucide-react'
 import { useStore } from '../../store/useStore'
 import clsx from 'clsx'
 
-export default function TopBar() {
-  const clawbotRunning = useStore((s) => s.clawbotRunning)
-  const systemStatus = useStore((s) => s.systemStatus)
-  const toggleSystem = useStore((s) => s.toggleSystem)
-  const agents = useStore((s) => s.agents)
-  const tasks = useStore((s) => s.tasks)
-  const resourceHistory = useStore((s) => s.resourceHistory)
-  const activeView = useStore((s) => s.activeView)
-
-  const [showConfirm, setShowConfirm] = useState(false)
-
-  const latest = resourceHistory[resourceHistory.length - 1] || { cpu: 0, mem: 0, net: 0 }
-  const errorAgents = agents.filter((a) => a.status === 'error').length
-  const runningTasks = tasks.filter((t) => t.status === 'running').length
-  const failedTasks = tasks.filter((t) => t.status === 'failed').length
-
-  const VIEW_LABELS = {
-    dashboard: 'Dashboard',
-    agents: 'Sub-Agents',
-    tasks: 'Task Orchestrator',
-    skills: 'ClaWHub — Skills',
-    memory: 'Memory System',
-    logs: 'Logs Console',
-    team: 'Team',
-    calendar: 'Calendar',
-    content: 'Content',
-  }
-
-  const handlePower = () => {
-    if (clawbotRunning) {
-      setShowConfirm(true)
-    } else {
-      toggleSystem()
-    }
-  }
-
-  return (
-    <>
-      <header className="flex items-center h-12 px-4 border-b border-mc-border bg-mc-deep shrink-0 gap-3">
-        {/* Title */}
-        <div className="flex items-center gap-2 mr-2">
-          <span className="text-amber-400 text-[11px] font-mono font-semibold tracking-widest uppercase">
-            ⚡ {VIEW_LABELS[activeView] || activeView}
-          </span>
-        </div>
-
-        {/* Separator */}
-        <div className="h-4 w-px bg-mc-border" />
-
-        {/* System metrics */}
-        <div className="flex items-center gap-3">
-          <MetricPill
-            icon={<Cpu size={10} />}
-            label="CPU"
-            value={`${latest.cpu.toFixed(0)}%`}
-            color={latest.cpu > 80 ? 'red' : latest.cpu > 60 ? 'amber' : 'green'}
-          />
-          <MetricPill
-            icon={<MemoryStick size={10} />}
-            label="MEM"
-            value={`${latest.mem.toFixed(0)}%`}
-            color={latest.mem > 80 ? 'red' : latest.mem > 60 ? 'amber' : 'green'}
-          />
-          <MetricPill
-            icon={<Wifi size={10} />}
-            label="NET"
-            value={`${latest.net.toFixed(0)}%`}
-            color="blue"
-          />
-        </div>
-
-        {/* Separator */}
-        <div className="h-4 w-px bg-mc-border" />
-
-        {/* Alerts */}
-        {(errorAgents > 0 || failedTasks > 0) && (
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-red-500/10 border border-red-500/20">
-            <AlertTriangle size={11} className="text-red-400" />
-            <span className="text-[11px] text-red-400 font-mono">
-              {errorAgents > 0 && `${errorAgents} agent error${errorAgents > 1 ? 's' : ''}`}
-              {errorAgents > 0 && failedTasks > 0 && ' · '}
-              {failedTasks > 0 && `${failedTasks} task failed`}
-            </span>
-          </div>
-        )}
-
-        {/* Running tasks badge */}
-        {runningTasks > 0 && (
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-amber-500/10 border border-amber-500/20">
-            <Activity size={11} className="text-amber-400 animate-pulse" />
-            <span className="text-[11px] text-amber-400 font-mono">
-              {runningTasks} task{runningTasks > 1 ? 's' : ''} running
-            </span>
-          </div>
-        )}
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Date / time */}
-        <LiveClock />
-
-        {/* Separator */}
-        <div className="h-4 w-px bg-mc-border" />
-
-        {/* Notification bell */}
-        <button className="btn-ghost relative">
-          <Bell size={14} />
-          {(errorAgents > 0 || failedTasks > 0) && (
-            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full" />
-          )}
-        </button>
-
-        {/* Settings */}
-        <button className="btn-ghost">
-          <Settings size={14} />
-        </button>
-
-        {/* Power button */}
-        <button
-          onClick={handlePower}
-          className={clsx(
-            'flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-[12px] font-semibold transition-all',
-            clawbotRunning
-              ? 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
-              : 'bg-green-500/10 border-green-500/30 text-green-400 hover:bg-green-500/20'
-          )}
-        >
-          <Power size={13} />
-          {clawbotRunning ? 'Stop' : 'Start'}
-        </button>
-      </header>
-
-      {/* Confirm modal */}
-      {showConfirm && (
-        <div className="modal-overlay" onClick={() => setShowConfirm(false)}>
-          <div
-            className="modal-box max-w-sm p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-red-500/20 border border-red-500/30 flex items-center justify-center">
-                <Power size={18} className="text-red-400" />
-              </div>
-              <div>
-                <div className="text-[15px] font-semibold text-mc-text">Shut down ClawBot?</div>
-                <div className="text-[12px] text-mc-muted">All agents will be stopped immediately.</div>
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <button className="btn-secondary" onClick={() => setShowConfirm(false)}>
-                Cancel
-              </button>
-              <button
-                className="btn-danger text-[13px] px-4 py-2"
-                onClick={() => { toggleSystem(); setShowConfirm(false) }}
-              >
-                Confirm Shutdown
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  )
+const REGIME_COLORS = {
+  NORMAL:   'text-green-400',
+  CAUTION:  'text-amber-400',
+  CRITICAL: 'text-red-400',
+  RECOVERY: 'text-blue-400',
 }
 
-function MetricPill({ icon, label, value, color }) {
-  const colors = {
-    green: 'text-green-400',
-    amber: 'text-amber-400',
-    red: 'text-red-400',
-    blue: 'text-blue-400',
+const VIEW_LABELS = {
+  dashboard: 'Dashboard',
+  skills:    'ClaWHub — Skills',
+  logs:      'Logs Console',
+}
+
+export default function TopBar() {
+  const alfred      = useStore((s) => s.alfred)
+  const alfredError = useStore((s) => s.alfredError)
+  const loading     = useStore((s) => s.alfredLoading)
+  const lastUpdated = useStore((s) => s.alfredLastUpdated)
+  const activeView  = useStore((s) => s.activeView)
+
+  const regime = (alfred?.regime ?? alfred?.market_regime ?? '—').toString().toUpperCase()
+  const bank   = alfred?.bank ?? alfred?.balance ?? alfred?.capital
+  const pnlDay = alfred?.pnl_today ?? alfred?.daily_pnl ?? alfred?.pnl_24h
+  const status = alfred?.status ?? alfred?.bot_status ?? 'unknown'
+
+  const pad = (n) => String(n).padStart(2, '0')
+  const fmtLast = (d) => {
+    if (!d) return '—'
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
   }
+
   return (
-    <div className="flex items-center gap-1 text-[11px] font-mono">
-      <span className={clsx('text-mc-muted', colors[color])}>{icon}</span>
-      <span className="text-mc-muted">{label}</span>
-      <span className={clsx('font-semibold', colors[color])}>{value}</span>
-    </div>
+    <header className="flex items-center h-12 px-4 border-b border-mc-border bg-mc-deep shrink-0 gap-3">
+      {/* View title */}
+      <span className="text-[11px] font-mono font-semibold tracking-widest uppercase text-amber-400">
+        ⚡ {VIEW_LABELS[activeView] || activeView}
+      </span>
+
+      <div className="h-4 w-px bg-mc-border" />
+
+      {/* Alfred status pills */}
+      {loading ? (
+        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-mc-panel border border-mc-border">
+          <RefreshCw size={10} className="text-mc-muted animate-spin" />
+          <span className="text-[10px] text-mc-muted font-mono">Connecting...</span>
+        </div>
+      ) : alfred ? (
+        <>
+          {/* Bot status */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-mc-panel border border-mc-border">
+            <span className={clsx('w-1.5 h-1.5 rounded-full', status === 'running' || status === 'active' ? 'bg-green-400 animate-pulse' : 'bg-mc-muted')} />
+            <span className="text-[10px] font-mono text-mc-text">{status}</span>
+          </div>
+
+          {/* Regime */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-mc-panel border border-mc-border">
+            <ShieldAlert size={10} className={REGIME_COLORS[regime] || 'text-mc-muted'} />
+            <span className={clsx('text-[10px] font-mono font-bold', REGIME_COLORS[regime] || 'text-mc-muted')}>
+              {regime}
+            </span>
+          </div>
+
+          {/* Bank */}
+          {bank != null && (
+            <div className="flex items-center gap-1 text-[11px] font-mono">
+              <span className="text-mc-muted">Bank</span>
+              <span className="text-green-300 font-semibold">
+                ${Number(bank).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          )}
+
+          {/* P&L today */}
+          {pnlDay != null && (
+            <div className="flex items-center gap-1 text-[11px] font-mono">
+              <span className="text-mc-muted">P&L</span>
+              <span className={Number(pnlDay) >= 0 ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>
+                {Number(pnlDay) >= 0 ? '+' : ''}{Number(pnlDay).toFixed(2)}$
+              </span>
+            </div>
+          )}
+        </>
+      ) : null}
+
+      {/* Error indicator */}
+      {alfredError && (
+        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-red-500/10 border border-red-500/20">
+          <AlertCircle size={10} className="text-red-400" />
+          <span className="text-[10px] text-red-400 font-mono">Server offline</span>
+        </div>
+      )}
+
+      <div className="flex-1" />
+
+      {/* Last sync */}
+      {lastUpdated && (
+        <div className="text-[10px] font-mono text-mc-subtle">
+          sync <span className="text-mc-muted">{fmtLast(lastUpdated)}</span>
+        </div>
+      )}
+
+      <LiveClock />
+
+      <div className="h-4 w-px bg-mc-border" />
+
+      <button className="btn-ghost" title="Notifications">
+        <Bell size={14} />
+      </button>
+      <button className="btn-ghost" title="Settings">
+        <Settings size={14} />
+      </button>
+    </header>
   )
 }
 
@@ -206,7 +127,7 @@ function LiveClock() {
   const pad = (n) => String(n).padStart(2, '0')
   return (
     <div className="text-[11px] font-mono text-mc-muted">
-      {time.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })}
+      {time.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
       {' '}
       <span className="text-mc-text font-semibold">
         {pad(time.getHours())}:{pad(time.getMinutes())}:{pad(time.getSeconds())}
