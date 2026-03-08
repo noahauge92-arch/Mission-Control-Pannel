@@ -76,39 +76,160 @@ if (typeof document !== 'undefined' && !document.getElementById(STYLE_ID)) {
   document.head.appendChild(style)
 }
 
-// ── Pixel Character SVG (32x32) ──────────────────────────────────────────────
+// ── Pixel Character SVG (44x64) — detailed pixel-art human ──────────────────
 function PixelCharacter({ color, icon, animate }) {
+  // Lighten/darken helpers for shading
+  const shade = 'rgba(0,0,0,0.22)'
+  const lit   = 'rgba(255,255,255,0.18)'
   return (
     <svg
-      width="32" height="32" viewBox="0 0 32 32"
+      width="44" height="64" viewBox="0 0 44 64"
       style={{
         animation: animate ? 'ws-typing 0.8s ease-in-out infinite' : 'none',
         transformOrigin: 'center bottom',
+        imageRendering: 'pixelated',
       }}
     >
-      {/* Head */}
-      <rect x="12" y="2" width="8" height="8" fill="#f5c6a0" stroke="#c48a60" strokeWidth="0.5" />
-      {/* Eyes */}
-      <rect x="14" y="5" width="2" height="2" fill="#2a2a3a" />
-      <rect x="18" y="5" width="2" height="2" fill="#2a2a3a" />
-      {/* Body */}
-      <rect x="10" y="10" width="12" height="12" fill={color} stroke="rgba(0,0,0,0.3)" strokeWidth="0.5" />
-      {/* T-shirt icon */}
-      <text x="16" y="19" textAnchor="middle" fontSize="7" fill="white" style={{ filter: 'drop-shadow(0 0 1px rgba(0,0,0,0.5))' }}>
+      {/* ── HAIR ── */}
+      {/* Top hair block */}
+      <rect x="11" y="1"  width="22" height="7"  fill="#3d2410" rx="2" />
+      {/* Side hair / sideburns */}
+      <rect x="9"  y="5"  width="4"  height="9"  fill="#3d2410" />
+      <rect x="31" y="5"  width="4"  height="9"  fill="#3d2410" />
+      {/* Fringe detail */}
+      <rect x="13" y="7"  width="4"  height="2"  fill="#5a3820" />
+      <rect x="27" y="7"  width="4"  height="2"  fill="#5a3820" />
+
+      {/* ── HEAD ── */}
+      <rect x="11" y="6"  width="22" height="18" fill="#f5c6a0" />
+      {/* Jaw shadow */}
+      <rect x="12" y="21" width="20" height="3"  fill="#e8a87c" />
+
+      {/* ── EARS ── */}
+      <rect x="8"  y="11" width="3"  height="7"  fill="#e8a87c" />
+      <rect x="33" y="11" width="3"  height="7"  fill="#e8a87c" />
+      {/* Ear inner */}
+      <rect x="9"  y="12" width="1"  height="4"  fill="#c98a60" />
+      <rect x="34" y="12" width="1"  height="4"  fill="#c98a60" />
+
+      {/* ── EYEBROWS ── */}
+      <rect x="13" y="10" width="6"  height="2"  fill="#3d2410" />
+      <rect x="25" y="10" width="6"  height="2"  fill="#3d2410" />
+
+      {/* ── EYES ── */}
+      {/* Eye whites */}
+      <rect x="13" y="13" width="7"  height="5"  fill="white" />
+      <rect x="24" y="13" width="7"  height="5"  fill="white" />
+      {/* Irises */}
+      <rect x="15" y="14" width="4"  height="4"  fill="#3a6a9a" />
+      <rect x="26" y="14" width="4"  height="4"  fill="#3a6a9a" />
+      {/* Pupils */}
+      <rect x="16" y="15" width="2"  height="2"  fill="#1a1a2a" />
+      <rect x="27" y="15" width="2"  height="2"  fill="#1a1a2a" />
+      {/* Eye shine */}
+      <rect x="16" y="14" width="1"  height="1"  fill="rgba(255,255,255,0.8)" />
+      <rect x="27" y="14" width="1"  height="1"  fill="rgba(255,255,255,0.8)" />
+      {/* Eyelid top shadow */}
+      <rect x="13" y="13" width="7"  height="1"  fill="rgba(0,0,0,0.15)" />
+      <rect x="24" y="13" width="7"  height="1"  fill="rgba(0,0,0,0.15)" />
+
+      {/* ── NOSE ── */}
+      <rect x="20" y="19" width="4"  height="2"  fill="#d49070" />
+      <rect x="19" y="20" width="1"  height="1"  fill="#c07850" />
+      <rect x="24" y="20" width="1"  height="1"  fill="#c07850" />
+
+      {/* ── MOUTH ── */}
+      {/* Smile curve (pixel art style) */}
+      <rect x="15" y="22" width="14" height="2"  fill="#c08060" />
+      <rect x="14" y="21" width="2"  height="2"  fill="#c08060" />
+      <rect x="28" y="21" width="2"  height="2"  fill="#c08060" />
+      {/* Teeth */}
+      <rect x="16" y="22" width="12" height="1"  fill="white" opacity="0.7" />
+
+      {/* ── NECK ── */}
+      <rect x="17" y="24" width="10" height="5"  fill="#f0bc96" />
+      {/* Neck shadow */}
+      <rect x="17" y="24" width="2"  height="5"  fill={shade} />
+
+      {/* ── SHIRT / BODY ── */}
+      <rect x="8"  y="29" width="28" height="20" fill={color} />
+      {/* Left edge highlight */}
+      <rect x="8"  y="29" width="2"  height="20" fill={lit} />
+      {/* Right edge shadow */}
+      <rect x="34" y="29" width="2"  height="20" fill={shade} />
+      {/* Collar V-neck left */}
+      <rect x="17" y="29" width="3"  height="7"  fill={shade} />
+      {/* Collar V-neck right */}
+      <rect x="24" y="29" width="3"  height="7"  fill={shade} />
+      {/* Undershirt / collar white */}
+      <rect x="19" y="29" width="6"  height="3"  fill="rgba(255,255,255,0.25)" />
+
+      {/* Icon on shirt */}
+      <text x="22" y="44" textAnchor="middle" fontSize="9" fill="rgba(255,255,255,0.9)"
+        style={{ filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.5))' }}>
         {icon}
       </text>
-      {/* Arms */}
-      <rect x="6" y="11" width="4" height="8" fill={color} stroke="rgba(0,0,0,0.2)" strokeWidth="0.5" />
-      <rect x="22" y="11" width="4" height="8" fill={color} stroke="rgba(0,0,0,0.2)" strokeWidth="0.5" />
-      {/* Hands */}
-      <rect x="6" y="19" width="4" height="3" fill="#f5c6a0" />
-      <rect x="22" y="19" width="4" height="3" fill="#f5c6a0" />
-      {/* Legs */}
-      <rect x="11" y="22" width="4" height="8" fill="#3a4a6a" />
-      <rect x="17" y="22" width="4" height="8" fill="#3a4a6a" />
-      {/* Shoes */}
-      <rect x="10" y="29" width="5" height="3" fill="#2a2a2a" />
-      <rect x="17" y="29" width="5" height="3" fill="#2a2a2a" />
+
+      {/* ── ARMS ── */}
+      {animate ? (
+        /* Typing pose: arms angled slightly forward/down */
+        <>
+          {/* Left upper arm */}
+          <rect x="1"  y="29" width="7"  height="10" fill={color} />
+          <rect x="1"  y="29" width="2"  height="10" fill={lit} />
+          {/* Left forearm — angled down */}
+          <rect x="0"  y="39" width="8"  height="6"  fill={color} />
+          {/* Left hand */}
+          <rect x="0"  y="44" width="9"  height="5"  fill="#f5c6a0" />
+          <rect x="0"  y="48" width="2"  height="2"  fill="#e8a87c" />
+          <rect x="3"  y="48" width="2"  height="2"  fill="#e8a87c" />
+          <rect x="6"  y="48" width="2"  height="2"  fill="#e8a87c" />
+
+          {/* Right upper arm */}
+          <rect x="36" y="29" width="7"  height="10" fill={color} />
+          <rect x="41" y="29" width="2"  height="10" fill={shade} />
+          {/* Right forearm — angled down */}
+          <rect x="36" y="39" width="8"  height="6"  fill={color} />
+          {/* Right hand */}
+          <rect x="35" y="44" width="9"  height="5"  fill="#f5c6a0" />
+          <rect x="35" y="48" width="2"  height="2"  fill="#e8a87c" />
+          <rect x="38" y="48" width="2"  height="2"  fill="#e8a87c" />
+          <rect x="41" y="48" width="2"  height="2"  fill="#e8a87c" />
+        </>
+      ) : (
+        /* Relaxed pose: arms at sides */
+        <>
+          <rect x="1"  y="29" width="7"  height="16" fill={color} />
+          <rect x="1"  y="29" width="2"  height="16" fill={lit} />
+          <rect x="0"  y="44" width="9"  height="6"  fill="#f5c6a0" />
+
+          <rect x="36" y="29" width="7"  height="16" fill={color} />
+          <rect x="41" y="29" width="2"  height="16" fill={shade} />
+          <rect x="35" y="44" width="9"  height="6"  fill="#f5c6a0" />
+        </>
+      )}
+
+      {/* ── BELT ── */}
+      <rect x="8"  y="49" width="28" height="3"  fill="#1a2030" />
+      {/* Buckle */}
+      <rect x="19" y="49" width="6"  height="3"  fill="#8a7030" />
+      <rect x="20" y="50" width="4"  height="1"  fill="#c0a040" />
+
+      {/* ── PANTS ── */}
+      <rect x="8"  y="52" width="12" height="9"  fill="#2d3e5a" />
+      <rect x="24" y="52" width="12" height="9"  fill="#2d3e5a" />
+      {/* Pant crease */}
+      <rect x="13" y="52" width="2"  height="9"  fill="rgba(0,0,0,0.15)" />
+      <rect x="29" y="52" width="2"  height="9"  fill="rgba(0,0,0,0.15)" />
+      {/* Gap between legs */}
+      <rect x="20" y="52" width="4"  height="9"  fill="#1a2030" />
+
+      {/* ── SHOES ── */}
+      <rect x="7"  y="60" width="14" height="4"  fill="#1a1a28" rx="1" />
+      <rect x="23" y="60" width="14" height="4"  fill="#1a1a28" rx="1" />
+      {/* Sole highlight */}
+      <rect x="8"  y="60" width="12" height="1"  fill="rgba(255,255,255,0.1)" />
+      <rect x="24" y="60" width="12" height="1"  fill="rgba(255,255,255,0.1)" />
     </svg>
   )
 }
@@ -329,26 +450,80 @@ function BossDesk({ boss, onSave, onDispatch, dispatching, tasks }) {
       {/* Boss header with crown character */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
         <div style={{ position: 'relative' }}>
-          <svg width="48" height="48" viewBox="0 0 48 48">
-            {/* Crown */}
-            <polygon points="14,12 16,4 20,10 24,2 28,10 32,4 34,12" fill="#f59e0b" stroke="#b97a00" strokeWidth="0.5" />
-            <rect x="14" y="12" width="20" height="4" fill="#f59e0b" stroke="#b97a00" strokeWidth="0.5" />
-            {/* Head */}
-            <rect x="18" y="16" width="12" height="10" fill="#f5c6a0" stroke="#c48a60" strokeWidth="0.5" />
-            {/* Eyes */}
-            <rect x="20" y="20" width="2" height="2" fill="#2a2a3a" />
-            <rect x="26" y="20" width="2" height="2" fill="#2a2a3a" />
-            {/* Smile */}
-            <rect x="22" y="23" width="4" height="1" fill="#c48a60" />
-            {/* Body */}
-            <rect x="16" y="26" width="16" height="14" fill="#f59e0b" stroke="rgba(0,0,0,0.2)" strokeWidth="0.5" />
-            <text x="24" y="36" textAnchor="middle" fontSize="8" fill="white">👑</text>
-            {/* Arms */}
-            <rect x="10" y="27" width="6" height="8" fill="#f59e0b" />
-            <rect x="32" y="27" width="6" height="8" fill="#f59e0b" />
-            {/* Legs */}
-            <rect x="17" y="40" width="5" height="8" fill="#2a3a5a" />
-            <rect x="26" y="40" width="5" height="8" fill="#2a3a5a" />
+          <svg width="56" height="64" viewBox="0 0 56 64" style={{ imageRendering: 'pixelated' }}>
+            {/* ── CROWN ── */}
+            <polygon points="14,14 17,4 22,11 28,1 34,11 39,4 42,14" fill="#f59e0b" />
+            <rect x="14" y="14" width="28" height="5" fill="#f59e0b" />
+            {/* Crown gems */}
+            <rect x="21" y="6"  width="3" height="3" fill="#ef4444" />
+            <rect x="27" y="2"  width="3" height="3" fill="#a855f7" />
+            <rect x="33" y="6"  width="3" height="3" fill="#3b82f6" />
+            {/* Crown sheen */}
+            <rect x="15" y="15" width="26" height="2" fill="rgba(255,255,255,0.3)" />
+
+            {/* ── HAIR (dark, under crown) ── */}
+            <rect x="16" y="17" width="24" height="3" fill="#3d2410" />
+            <rect x="14" y="18" width="4"  height="5" fill="#3d2410" />
+            <rect x="38" y="18" width="4"  height="5" fill="#3d2410" />
+
+            {/* ── HEAD ── */}
+            <rect x="16" y="19" width="24" height="16" fill="#f5c6a0" />
+            <rect x="17" y="32" width="22" height="3"  fill="#e8a87c" />
+            {/* Ears */}
+            <rect x="13" y="23" width="3"  height="7"  fill="#e8a87c" />
+            <rect x="40" y="23" width="3"  height="7"  fill="#e8a87c" />
+
+            {/* ── EYEBROWS (bold) ── */}
+            <rect x="18" y="22" width="7"  height="2"  fill="#3d2410" />
+            <rect x="31" y="22" width="7"  height="2"  fill="#3d2410" />
+
+            {/* ── EYES ── */}
+            <rect x="18" y="25" width="7"  height="5"  fill="white" />
+            <rect x="31" y="25" width="7"  height="5"  fill="white" />
+            <rect x="20" y="26" width="4"  height="4"  fill="#7c3aed" />
+            <rect x="33" y="26" width="4"  height="4"  fill="#7c3aed" />
+            <rect x="21" y="27" width="2"  height="2"  fill="#1a0a3a" />
+            <rect x="34" y="27" width="2"  height="2"  fill="#1a0a3a" />
+            <rect x="21" y="26" width="1"  height="1"  fill="rgba(255,255,255,0.8)" />
+            <rect x="34" y="26" width="1"  height="1"  fill="rgba(255,255,255,0.8)" />
+
+            {/* ── NOSE ── */}
+            <rect x="26" y="30" width="4"  height="2"  fill="#d49070" />
+
+            {/* ── SMIRK ── */}
+            <rect x="21" y="33" width="14" height="2"  fill="#c08060" />
+            <rect x="20" y="32" width="2"  height="2"  fill="#c08060" />
+            <rect x="34" y="32" width="2"  height="2"  fill="#c08060" />
+            <rect x="22" y="33" width="10" height="1"  fill="white" opacity="0.6" />
+
+            {/* ── NECK ── */}
+            <rect x="23" y="35" width="10" height="4"  fill="#f0bc96" />
+
+            {/* ── SUIT BODY (gold) ── */}
+            <rect x="11" y="39" width="34" height="18" fill="#f59e0b" />
+            {/* Suit lapels */}
+            <rect x="24" y="39" width="4"  height="9"  fill="rgba(0,0,0,0.2)" />
+            <rect x="28" y="39" width="4"  height="9"  fill="rgba(0,0,0,0.15)" />
+            {/* Suit highlight */}
+            <rect x="12" y="39" width="2"  height="18" fill="rgba(255,255,255,0.2)" />
+            {/* Tie */}
+            <rect x="26" y="41" width="4"  height="12" fill="#7c3aed" />
+            <rect x="24" y="51" width="8"  height="4"  fill="#7c3aed" />
+
+            {/* ── ARMS ── */}
+            <rect x="4"  y="39" width="7"  height="12" fill="#f59e0b" />
+            <rect x="45" y="39" width="7"  height="12" fill="#f59e0b" />
+            {/* Cufflinks */}
+            <rect x="4"  y="50" width="7"  height="3"  fill="white" opacity="0.8" />
+            <rect x="45" y="50" width="7"  height="3"  fill="white" opacity="0.8" />
+            {/* Hands */}
+            <rect x="3"  y="53" width="9"  height="5"  fill="#f5c6a0" />
+            <rect x="44" y="53" width="9"  height="5"  fill="#f5c6a0" />
+
+            {/* ── PANTS ── */}
+            <rect x="12" y="57" width="14" height="7"  fill="#2a3a5a" />
+            <rect x="30" y="57" width="14" height="7"  fill="#2a3a5a" />
+            <rect x="26" y="57" width="4"  height="7"  fill="#1a2030" />
           </svg>
         </div>
         <div style={{ flex: 1 }}>

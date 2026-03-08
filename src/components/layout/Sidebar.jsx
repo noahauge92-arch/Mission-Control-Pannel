@@ -1,11 +1,12 @@
 import React from 'react'
-import { LayoutDashboard, Zap, ClipboardList, ChevronRight, Monitor } from 'lucide-react'
+import { LayoutDashboard, Zap, ClipboardList, ChevronRight, Monitor, MessageSquare } from 'lucide-react'
 import { useStore } from '../../store/useStore'
 import clsx from 'clsx'
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard',      icon: LayoutDashboard },
   { id: 'workspace', label: 'Workspace',       icon: Monitor },
+  { id: 'chat',      label: 'Chat',            icon: MessageSquare },
   { id: 'tasks',     label: 'Tâches',          icon: ClipboardList },
   { id: 'skills',    label: 'Skills',          icon: Zap },
 ]

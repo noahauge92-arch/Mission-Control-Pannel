@@ -6,6 +6,7 @@ import Dashboard from './components/dashboard/Dashboard'
 import SkillsHub from './components/skills/SkillsHub'
 import Workspace from './components/workspace/Workspace'
 import TaskManager from './components/tasks/TaskManager'
+import ChatCenter from './components/chat/ChatCenter'
 import ComingSoon from './components/shared/ComingSoon'
 
 const POLL_MS = 30_000
@@ -48,6 +49,7 @@ export default function App() {
     switch (activeView) {
       case 'dashboard':  return <Dashboard />
       case 'workspace':  return <Workspace />
+      case 'chat':       return <ChatCenter />
       case 'tasks':      return <TaskManager />
       case 'skills':     return <SkillsHub />
       default:           return <ComingSoon view={activeView} />
