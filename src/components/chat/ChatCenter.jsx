@@ -4,23 +4,27 @@ import { Send, RefreshCw, MessageSquare } from 'lucide-react'
 // ── Agent registry ────────────────────────────────────────────────────────────
 
 const GROUP_AGENT = {
-  id: 'group', name: 'Discussion Groupe', role: 'Le Patron coordonne tous les agents',
+  id: 'groupe', name: 'Discussion Groupe', role: 'Tous les agents en parallèle',
   icon: '💬', color: '#a855f7',
   badge: 'Multi-Agent', badgeColor: 'rgba(168,85,247,0.12)', badgeBorder: 'rgba(168,85,247,0.35)', badgeText: '#a855f7',
 }
 
 const SYSTEM_AGENTS = [
   {
-    id: 'boss', name: 'Baby Boss', role: 'Chef de Projet', icon: '👑', color: '#f59e0b',
+    id: 'patron', name: 'Le Patron', role: 'CEO — Coordinateur OpenClaw', icon: '👑', color: '#f59e0b',
     badge: 'DeepSeek', badgeColor: 'rgba(245,158,11,0.15)', badgeBorder: 'rgba(245,158,11,0.35)', badgeText: '#f59e0b',
   },
   {
-    id: 'alfred', name: 'Alfred', role: 'Trading Agent — Polymarket', icon: '⚙️', color: '#22c55e',
-    badge: 'local', badgeColor: 'rgba(34,197,94,0.1)', badgeBorder: 'rgba(34,197,94,0.3)', badgeText: '#22c55e',
+    id: 'balthazar', name: 'Balthazar', role: 'Code & Scraping', icon: '💻', color: '#3b82f6',
+    badge: 'DeepSeek', badgeColor: 'rgba(59,130,246,0.1)', badgeBorder: 'rgba(59,130,246,0.3)', badgeText: '#3b82f6',
   },
   {
-    id: 'balthazar', name: 'Balthazar', role: 'Scraping & Coding', icon: '📰', color: '#3b82f6',
-    badge: 'local', badgeColor: 'rgba(59,130,246,0.1)', badgeBorder: 'rgba(59,130,246,0.3)', badgeText: '#3b82f6',
+    id: 'hugodecrypte', name: 'Hugo Décrypte', role: 'Veille & Actualités', icon: '🔍', color: '#8b5cf6',
+    badge: 'DeepSeek', badgeColor: 'rgba(139,92,246,0.1)', badgeBorder: 'rgba(139,92,246,0.3)', badgeText: '#8b5cf6',
+  },
+  {
+    id: '2fois', name: '2fois', role: 'Réseaux Sociaux & Contenu', icon: '📱', color: '#ec4899',
+    badge: 'DeepSeek', badgeColor: 'rgba(236,72,153,0.1)', badgeBorder: 'rgba(236,72,153,0.3)', badgeText: '#ec4899',
   },
 ]
 
@@ -164,7 +168,7 @@ function AgentListItem({ agent, active, onClick, processStatus }) {
 export default function ChatCenter() {
   const [customAgents, setCustomAgents]   = useState([])
   const [processStatus, setProcessStatus] = useState({})
-  const [activeAgentId, setActiveAgentId] = useState('group')
+  const [activeAgentId, setActiveAgentId] = useState('groupe')
   const [messages, setMessages]           = useState([])
   const [input, setInput]                 = useState('')
   const [typing, setTyping]               = useState(false)
@@ -234,11 +238,11 @@ export default function ChatCenter() {
             ...prev,
             ...hist.map((m) => {
               // Group history: assistant messages have agentId/agentName/agentIcon/agentColor
-              if (activeAgentId === 'group' && m.role === 'assistant' && m.agentName) {
+              if ((activeAgentId === 'groupe' || activeAgentId === 'group') && m.role === 'assistant' && m.agentName) {
                 return {
                   ...m,
-                  agentId: 'group',
-                  groupAgent: { id: m.agentId ?? 'boss', name: m.agentName, icon: m.agentIcon ?? '🤖', color: m.agentColor ?? '#a855f7' },
+                  agentId: 'groupe',
+                  groupAgent: { id: m.agentId ?? 'patron', name: m.agentName, icon: m.agentIcon ?? '🤖', color: m.agentColor ?? '#a855f7' },
                 }
               }
               return { ...m, agentId: activeAgentId }
@@ -267,19 +271,19 @@ export default function ChatCenter() {
     setTyping(true)
 
     try {
-      if (activeAgentId === 'group') {
-        // ── Group mode: Le Patron coordinates all agents ──────────────────
-        const r = await fetch('/api/chat/group', {
+      if (activeAgentId === 'groupe' || activeAgentId === 'group') {
+        // ── Groupe mode: parallel DeepSeek calls to all agents ────────────
+        const r = await fetch('/api/chat', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ message: text, history: buildHistory() }),
+          body:    JSON.stringify({ agentId: 'groupe', message: text, history: buildHistory() }),
         })
-        const { messages: groupMsgs = [] } = await r.json()
+        const { replies = [] } = await r.json()
         setMessages((prev) => [
           ...prev,
-          ...groupMsgs.map((m) => ({
-            role: 'assistant', content: m.content, agentId: 'group', ts: m.ts ?? Date.now(),
-            groupAgent: { id: m.id, name: m.name, icon: m.icon, color: m.color },
+          ...replies.map((m) => ({
+            role: 'assistant', content: m.reply, agentId: 'groupe', ts: Date.now(),
+            groupAgent: { id: m.agentId, name: m.agent, icon: m.icon, color: m.color },
           })),
         ])
       } else {
@@ -307,10 +311,11 @@ export default function ChatCenter() {
   }
 
   const welcomeHints = {
-    group:     ['quel est le statut de tout le monde ?', 'résumé complet de la situation', 'qu\'est-ce qu\'on fait aujourd\'hui ?'],
-    boss:      ['résumé de la situation', 'quelles tâches en cours ?', 'analyse le P&L d\'Alfred'],
-    alfred:    ['pnl', 'status', 'positions', 'logs'],
-    balthazar: ['news', 'status', 'logs'],
+    groupe:       ['quel est le statut de tout le monde ?', 'résumé complet de la situation', 'qu\'est-ce qu\'on fait aujourd\'hui ?'],
+    patron:       ['résumé de la situation', 'quelles tâches en cours ?', 'analyse le P&L d\'Alfred'],
+    balthazar:    ['code un script de scraping', 'crée une API Node.js', 'analyse ce repo GitHub'],
+    hugodecrypte: ['actualités crypto aujourd\'hui', 'tendances Polymarket', 'résumé de la semaine'],
+    '2fois':      ['idées de posts Twitter', 'analyse les tendances TikTok', 'rédige un thread X'],
   }
 
   return (
@@ -332,7 +337,7 @@ export default function ChatCenter() {
             </span>
           </div>
           <div style={{ fontFamily: 'monospace', fontSize: 9, color: '#2a3a50', marginTop: 4 }}>
-            Groupe / Boss / Custom : DeepSeek · Alfred / Balthazar : local
+            Tous les agents via DeepSeek · en parallèle en groupe
           </div>
         </div>
 
@@ -340,7 +345,7 @@ export default function ChatCenter() {
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {/* Group tab — always at top */}
           <div style={{ padding: '6px 0 0' }}>
-            <AgentListItem agent={GROUP_AGENT} active={activeAgentId === 'group'} onClick={() => setActiveAgentId('group')} processStatus={processStatus} />
+            <AgentListItem agent={GROUP_AGENT} active={activeAgentId === 'groupe'} onClick={() => setActiveAgentId('groupe')} processStatus={processStatus} />
           </div>
           <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '4px 14px' }} />
 
@@ -407,8 +412,8 @@ export default function ChatCenter() {
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 20 }}>
               <div style={{ fontSize: 48, opacity: 0.4 }}>{activeAgent.icon}</div>
               <div style={{ fontFamily: 'monospace', fontSize: 13, color: '#2a4060', textAlign: 'center', lineHeight: 1.8 }}>
-                {activeAgentId === 'group'
-                  ? <>Parle à <span style={{ color: '#a855f7' }}>toute l&apos;équipe</span> — Le Patron distribue aux agents</>
+                {(activeAgentId === 'groupe' || activeAgentId === 'group')
+                  ? <>Parle à <span style={{ color: '#a855f7' }}>toute l&apos;équipe</span> — réponses en parallèle de tous les agents</>
                   : <>Parle à <span style={{ color: activeAgent.color }}>{activeAgent.name}</span></>
                 }
               </div>
@@ -475,8 +480,8 @@ export default function ChatCenter() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              activeAgentId === 'group'
-                ? 'Message à toute l\'équipe… Le Patron coordonne et distribue les réponses'
+              (activeAgentId === 'groupe' || activeAgentId === 'group')
+                ? 'Message à toute l\'équipe… tous les agents répondent en parallèle'
                 : `Message ${activeAgent.name}… (Entrée pour envoyer, Shift+Entrée = nouvelle ligne)`
             }
             rows={1}

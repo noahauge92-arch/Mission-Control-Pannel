@@ -27,13 +27,17 @@ const TASKS_FILE  = join(ALFRED_DIR, 'tasks.json')
 
 // ── Per-agent directories (each agent owns its state + chat history) ──────────
 const AGENT_DIRS = {
-  alfred:    ALFRED_DIR,
-  balthazar: join(HOME, '.openclaw', 'balthazar'),
-  boss:      join(HOME, '.openclaw', 'patron'),
-  group:     join(HOME, '.openclaw', 'groupe'),
+  alfred:       ALFRED_DIR,
+  balthazar:    join(HOME, '.openclaw', 'balthazar'),
+  boss:         join(HOME, '.openclaw', 'patron'),
+  patron:       join(HOME, '.openclaw', 'patron'),
+  hugodecrypte: join(HOME, '.openclaw', 'hugodecrypte'),
+  '2fois':      join(HOME, '.openclaw', '2fois'),
+  group:        join(HOME, '.openclaw', 'groupe'),
+  groupe:       join(HOME, '.openclaw', 'groupe'),
 }
 // Create all dirs on startup (agents added later via /api/agents will be created on demand)
-;[ALFRED_DIR, SKILLS_DIR, ...Object.values(AGENT_DIRS)].forEach((d) => mkdirSync(d, { recursive: true }))
+;[ALFRED_DIR, SKILLS_DIR, ...new Set(Object.values(AGENT_DIRS))].forEach((d) => mkdirSync(d, { recursive: true }))
 
 function agentDir(agentId) {
   return AGENT_DIRS[agentId] ?? join(HOME, '.openclaw', agentId)
@@ -436,126 +440,154 @@ function saveChatHistory(agentId, history) {
 
 // ── Universal chat endpoint ───────────────────────────────────────────────────
 
+// Helper: call DeepSeek for a single agent and return reply string
+async function deepseekCall(systemPrompt, history, message, maxTokens = 500) {
+  const apiKey = process.env.DEEPSEEK_API_KEY || 'sk-ca1cb73de7124b8fb2a0aa1d11ca227a'
+  const response = await fetch('https://api.deepseek.com/chat/completions', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model:      'deepseek-chat',
+      max_tokens: maxTokens,
+      messages:   [
+        { role: 'system', content: systemPrompt },
+        ...history.slice(-10),
+        { role: 'user', content: message },
+      ],
+    }),
+  })
+  const data = await response.json()
+  return data.choices?.[0]?.message?.content ?? 'Pas de réponse DeepSeek.'
+}
+
+// Helper: build system prompt per agentId
+function buildSystemPrompt(agentId, s, agents, tasks) {
+  const t  = s.total_trades ?? s.totalTrades ?? 0
+  const wr = t > 0 ? Math.round((s.wins ?? 0) / t * 100) : 0
+
+  // Assigned tasks for this agent
+  const myTasks = tasks.filter((tk) => tk.assignedTo === agentId && tk.status !== 'done')
+  const taskStr = myTasks.length
+    ? `\nTes tâches assignées:\n${myTasks.map((tk) => `- [${tk.status}] ${tk.title}${tk.description ? ': ' + tk.description : ''}`).join('\n')}`
+    : ''
+
+  switch (agentId) {
+    case 'patron':
+    case 'boss':
+      return `Tu es Le Patron, CEO et coordinateur de l'écosystème OpenClaw de Noah.
+Tu supervises tous les agents IA et prends des décisions stratégiques.
+Contexte Alfred: Bank=${Number(s.bank ?? s.balance ?? 0).toFixed(2)}$, P&L=${Number(s.pnl_alltime ?? s.total_pnl ?? s.allTimePnl ?? 0).toFixed(2)}$, Trades=${t}, WR=${wr}%, Régime=${s.regime ?? s.market_regime ?? 'NORMAL'}
+Agents: Balthazar (code), Hugo Décrypte (veille info), 2fois (réseaux sociaux), Alfred (trading).
+Custom: ${agents.map((a) => `${a.name} (${a.role})`).join(', ') || 'aucun'}
+Tâches: ${tasks.filter((tk) => tk.status === 'todo').length} todo | ${tasks.filter((tk) => tk.status === 'in-progress').length} en cours | ${tasks.filter((tk) => tk.status === 'done').length} done${taskStr}
+Réponds en français, sois stratégique et concis. Si tu mentionnes une action concrète à réaliser, formule-la clairement.`
+
+    case 'balthazar':
+      return `Tu es Balthazar, agent IA codeur et analyste de l'écosystème OpenClaw de Noah.
+Tu es expert en JavaScript/Node.js, React, APIs, GitHub, scraping et automatisation.
+Tu réponds en français, précis et technique.${taskStr}`
+
+    case 'hugodecrypte':
+      return `Tu es Hugo Décrypte, expert en veille informationnelle et recherche pour Noah.
+Tu analyses les actualités, identifies les tendances importantes, fais des résumés clairs.
+Tu connais l'écosystème OpenClaw : Alfred trade sur Polymarket, Balthazar code, 2fois gère les réseaux sociaux.
+Réponds en français, sois analytique et précis.${taskStr}`
+
+    case '2fois':
+      return `Tu es 2fois, expert en réseaux sociaux et création de contenu pour Noah.
+Tu analyses les tendances Twitter/X, TikTok, Instagram, rédiges du contenu engageant, surveilles les mentions.
+Tu connais l'écosystème OpenClaw.
+Réponds en français, sois créatif et concis.${taskStr}`
+
+    default: {
+      const agent = agents.find((a) => a.id === agentId)
+      return `Tu es ${agent?.name ?? agentId}, assistant spécialisé dans l'écosystème OpenClaw de Noah.
+Rôle: ${agent?.role ?? 'assistant IA'}.
+Réponds en français, sois utile et concis.${taskStr}`
+    }
+  }
+}
+
+// Helper: if patron response mentions action verbs, auto-create tasks
+function maybeCreateTasksFromPatron(reply, tasks) {
+  const actionPatterns = [
+    /(?:il faut|faut|dois|doit|va|vais|devrait|doit|assign[ée]?|confie|demande à|crée|créer|développe|analyser?|surveiller?|publier?|poster?|coder?|scraper?|vérifier?)\s+(.{10,80})/gi,
+  ]
+  const newTasks = []
+  for (const pattern of actionPatterns) {
+    let m
+    while ((m = pattern.exec(reply)) !== null) {
+      const title = m[1].replace(/[.,;:!?]+$/, '').trim()
+      if (title.length > 10 && !tasks.some((t) => t.title.toLowerCase() === title.toLowerCase())) {
+        newTasks.push({
+          id:             crypto.randomUUID(),
+          title:          title.slice(0, 120),
+          description:    `Auto-créé depuis Le Patron`,
+          priority:       'medium',
+          category:       'other',
+          status:         'todo',
+          assignedTo:     null,
+          assignedToName: null,
+          createdAt:      new Date().toISOString(),
+          updatedAt:      new Date().toISOString(),
+        })
+      }
+    }
+  }
+  if (newTasks.length > 0) {
+    saveTasks([...tasks, ...newTasks.slice(0, 3)])  // max 3 tasks per response
+  }
+}
+
 app.post('/api/chat', async (req, res) => {
   const { agentId, message, history = [] } = req.body
   if (!message?.trim()) return res.status(400).json({ error: 'message required' })
-  const msg = message.toLowerCase()
 
-  // ── Alfred (keyword matching) ─────────────────────────────────────────────
-  if (agentId === 'alfred') {
-    const s  = readJSON(join(ALFRED_DIR, 'state.json'))
-    const t  = s.total_trades ?? s.totalTrades ?? 0
-    const wr = t > 0 ? Math.round((s.wins ?? 0) / t * 100) : 0
-    let reply
-
-    if (msg.includes('pnl') || msg.includes('p&l')) {
-      const bank    = Number(s.bank    ?? s.balance    ?? s.capital      ?? 0)
-      const today   = Number(s.pnl_today  ?? s.daily_pnl  ?? s.pnl_24h    ?? s.dailyPnl   ?? 0)
-      const allTime = Number(s.pnl_alltime ?? s.total_pnl  ?? s.cumulative_pnl ?? s.allTimePnl ?? 0)
-      reply = [
-        `💰 P&L aujourd'hui: ${today >= 0 ? '+' : ''}${today.toFixed(2)}$`,
-        `📈 All-time: ${allTime >= 0 ? '+' : ''}${allTime.toFixed(2)}$`,
-        `🎯 Trades: ${t} | WR: ${wr}%`,
-        `🏦 Bank: ${bank.toFixed(2)}$`,
-      ].join('\n')
-    } else if (msg.includes('status') || msg.includes('statut')) {
-      const running = isProcessRunning('alfred-polymarket.mjs')
-      let dryRun = false
-      if (running) {
-        try { dryRun = execSync('ps aux | grep alfred-polymarket | grep -v grep', { stdio: 'pipe' }).toString().includes('--dry-run') } catch {}
-      }
-      const modeStr = !running ? '🔴 OFFLINE' : dryRun ? '🟡 DRY-RUN' : '🟢 RÉEL'
-      const regime  = (s.regime ?? s.market_regime ?? '?').toUpperCase()
-      const pos     = (s.open_positions ?? s.positions ?? []).length
-      reply = [
-        `🤖 Alfred v8 — ${modeStr}`,
-        `📊 Régime: ${regime}`,
-        `📍 Positions: ${pos}/4`,
-        `⏸ Halted: ${s.halted ? '🔴 oui' : '✅ non'}`,
-      ].join('\n')
-    } else if (msg.includes('log')) {
-      const lines = await tailFile('/tmp/alfred-v8.log', 10)
-      reply = `📋 Logs récents:\n${lines.length ? lines.slice(-10).join('\n') : 'Aucun log.'}`
-    } else if (msg.includes('stop') || msg.includes('pause')) {
-      if (!s._error) {
-        s.halted = true
-        writeFileSync(join(ALFRED_DIR, 'state.json'), JSON.stringify(s, null, 2))
-      }
-      reply = '⏸ Alfred mis en pause. (halted = true)\nEnvoie "start" pour reprendre.'
-    } else if (msg.includes('start') || msg.includes('reprend') || msg.includes('resume')) {
-      if (!s._error) {
-        s.halted = false
-        writeFileSync(join(ALFRED_DIR, 'state.json'), JSON.stringify(s, null, 2))
-      }
-      reply = '▶️ Alfred relancé ! (halted = false) 🎯'
-    } else if (msg.includes('position') || msg.includes('pos')) {
-      const positions = s.open_positions ?? s.positions ?? []
-      if (!positions.length) {
-        reply = '📍 Aucune position ouverte.'
-      } else {
-        const lines = positions.slice(0, 5).map((p, i) => {
-          const name = (p.market ?? p.question ?? `Position ${i + 1}`).slice(0, 38)
-          const side = (p.side ?? p.outcome ?? '?').toUpperCase()
-          const pnl  = p.pnl ?? p.unrealized_pnl
-          return `${i + 1}. ${name} | ${side}${pnl != null ? ` | ${Number(pnl) >= 0 ? '+' : ''}${Number(pnl).toFixed(2)}$` : ''}`
-        })
-        reply = `📍 Positions (${positions.length}):\n${lines.join('\n')}`
-      }
-    } else {
-      const running = isProcessRunning('alfred-polymarket.mjs')
-      reply = `🤖 Alfred — ${running ? '🟢 actif' : '🔴 offline'}\nCommandes: pnl · status · logs · stop · start · positions`
-    }
-
-    const hist = readChatHistory('alfred')
-    hist.push({ role: 'user', content: message, ts: Date.now() })
-    hist.push({ role: 'assistant', content: reply, ts: Date.now() })
-    saveChatHistory('alfred', hist)
-    return res.json({ reply })
-  }
-
-  // ── All other agents (Balthazar, Boss, custom) → DeepSeek ───────────────
   const s      = readJSON(join(ALFRED_DIR, 'state.json'))
   const agents = readAgents()
   const tasks  = readTasks()
-  const t      = s.total_trades ?? s.totalTrades ?? 0
-  const wr     = t > 0 ? Math.round((s.wins ?? 0) / t * 100) : 0
 
-  const systemPrompt = agentId === 'boss'
-    ? `Tu es Baby Boss, chef de projet de l'écosystème OpenClaw de Noah.
-Tu gères:
-- Alfred (trading Polymarket): Bank=${Number(s.bank ?? s.balance ?? 0).toFixed(2)}$, P&L all-time=${Number(s.pnl_alltime ?? s.total_pnl ?? s.allTimePnl ?? 0).toFixed(2)}$, Trades=${t}, WR=${wr}%, Régime=${s.regime ?? s.market_regime ?? 'NORMAL'}
-- Balthazar (codeur GitHub & scraping news)
-- Agents custom: ${agents.map((a) => `${a.name} (${a.role})`).join(', ') || 'aucun'}
-- Tâches: ${tasks.filter((tk) => tk.status === 'todo').length} todo | ${tasks.filter((tk) => tk.status === 'in-progress').length} en cours | ${tasks.filter((tk) => tk.status === 'done').length} done
-Réponds en français, concis et actionnable.`
-    : agentId === 'balthazar'
-    ? `Tu es Balthazar, agent IA codeur et analyste de l'écosystème OpenClaw de Noah.
-Ton rôle: développement GitHub, création de sites web et apps, scraping d'actualités, analyse de données.
-Tu es expert en JavaScript/Node.js, React, APIs, et automatisation.
-Tu réponds en français, de façon précise et technique quand c'est pertinent.`
-    : (() => {
-        const agent = agents.find((a) => a.id === agentId)
-        return `Tu es ${agent?.name ?? 'un agent IA'} dans l'écosystème OpenClaw de Noah.\nRôle: ${agent?.role ?? 'assistant IA'}.\nTu réponds en français, de façon utile et concise.`
-      })()
+  // ── Groupe: parallel DeepSeek calls to all conversational agents ──────────
+  if (agentId === 'groupe' || agentId === 'group') {
+    const GROUPE_AGENTS = [
+      { id: 'patron',       name: 'Le Patron',     icon: '👑', color: '#f59e0b' },
+      { id: 'balthazar',    name: 'Balthazar',      icon: '💻', color: '#3b82f6' },
+      { id: 'hugodecrypte', name: 'Hugo Décrypte',  icon: '🔍', color: '#8b5cf6' },
+      { id: '2fois',        name: '2fois',           icon: '📱', color: '#ec4899' },
+    ]
+
+    try {
+      const replies = await Promise.all(
+        GROUPE_AGENTS.map(async (ag) => {
+          const prompt = buildSystemPrompt(ag.id, s, agents, tasks)
+          const reply  = await deepseekCall(prompt, history, message, 350)
+          return { agent: ag.name, agentId: ag.id, icon: ag.icon, color: ag.color, reply }
+        })
+      )
+
+      const hist = readChatHistory('groupe')
+      hist.push({ role: 'user', content: message, ts: Date.now() })
+      replies.forEach((r) => hist.push({ role: 'assistant', agentId: r.agentId, agentName: r.agent, agentIcon: r.icon, agentColor: r.color, content: r.reply, ts: Date.now() }))
+      saveChatHistory('groupe', hist)
+
+      return res.json({ replies })
+    } catch (e) {
+      return res.json({ replies: [{ agent: 'Erreur', agentId: 'error', icon: '⚠️', color: '#ef4444', reply: e.message }] })
+    }
+  }
+
+  // ── All conversational agents → DeepSeek ──────────────────────────────────
+  const systemPrompt = buildSystemPrompt(agentId, s, agents, tasks)
 
   try {
-    const apiKey = process.env.DEEPSEEK_API_KEY || 'sk-ca1cb73de7124b8fb2a0aa1d11ca227a'
-    const response = await fetch('https://api.deepseek.com/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: 'deepseek-chat',
-        max_tokens: 500,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...history.slice(-10),
-          { role: 'user', content: message },
-        ],
-      }),
-    })
-    const data  = await response.json()
-    const reply = data.choices?.[0]?.message?.content ?? 'Pas de réponse DeepSeek.'
-    const hist  = readChatHistory(agentId)
+    const reply = await deepseekCall(systemPrompt, history, message)
+
+    // Le Patron auto-creates tasks from its responses
+    if (agentId === 'patron' || agentId === 'boss') {
+      maybeCreateTasksFromPatron(reply, tasks)
+    }
+
+    const hist = readChatHistory(agentId)
     hist.push({ role: 'user', content: message, ts: Date.now() })
     hist.push({ role: 'assistant', content: reply, ts: Date.now() })
     saveChatHistory(agentId, hist)
