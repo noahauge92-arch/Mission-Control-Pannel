@@ -189,6 +189,24 @@ app.delete('/api/tasks/:id', (req, res) => {
   res.json({ ok: true })
 })
 
+// Résultat complet d'une tâche (pour le modal "Voir résultat")
+app.get('/api/tasks/:id/result', (req, res) => {
+  const tasks = readJson(TASKS_FILE, [])
+  const task  = tasks.find((t) => t.id === req.params.id)
+  if (!task) return res.status(404).json({ error: 'Not found' })
+  res.json(task)
+})
+
+// Statut de l'orchestrateur (logs récents)
+app.get('/api/orchestrator/status', (_req, res) => {
+  const lines = fs.existsSync('/tmp/orchestrator.log')
+    ? fs.readFileSync('/tmp/orchestrator.log', 'utf8').split('\n').filter(Boolean).slice(-20)
+    : []
+  let running = false
+  try { execSync('pgrep -f orchestrator.mjs', { stdio: 'pipe' }); running = true } catch {}
+  res.json({ running, lines })
+})
+
 // ── DeepSeek ──────────────────────────────────────────────────────────────────
 async function deepseek(messages, systemPrompt, maxTokens = 400) {
   const resp = await fetch('https://api.deepseek.com/chat/completions', {

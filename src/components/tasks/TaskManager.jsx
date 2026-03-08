@@ -26,13 +26,20 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import {
   Plus, X, Rocket, Trash2, CheckCircle, Circle, Clock,
-  AlertCircle, Filter, ChevronDown,
+  AlertCircle, Filter, Eye,
 } from 'lucide-react'
 import clsx from 'clsx'
 
 const PRIORITIES = ['high', 'medium', 'low']
 const CATEGORIES = ['research', 'code', 'trading', 'analysis', 'other']
 const STATUSES   = ['todo', 'in-progress', 'done']
+
+const ASSIGNABLE_AGENTS = [
+  { id: 'patron',       name: 'Le Patron',    icon: '👑' },
+  { id: 'balthazar',    name: 'Balthazar',    icon: '💻' },
+  { id: 'hugodecrypte', name: 'Hugo Décrypte',icon: '🔍' },
+  { id: '2fois',        name: '2fois',        icon: '📱' },
+]
 
 const PRIORITY_CFG = {
   high:   { color: '#ef4444', bg: 'rgba(239,68,68,0.1)',   border: 'rgba(239,68,68,0.3)',  label: 'Haute' },
@@ -54,6 +61,55 @@ const CATEGORY_CFG = {
   other:    { color: '#64748b', label: 'Autre',      icon: '📌' },
 }
 
+// ── ResultModal ───────────────────────────────────────────────────────────────
+function ResultModal({ task, onClose }) {
+  const agentMeta = ASSIGNABLE_AGENTS.find((a) => a.id === task.assignedTo)
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}
+      onClick={onClose}
+    >
+      <div
+        style={{ background: '#0d111a', border: '1px solid #1a2236', width: 620, maxWidth: '92vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.7)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #1a2236' }}>
+          <div>
+            <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#22c55e', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <CheckCircle size={12} color="#22c55e" />
+              TÂCHE COMPLÉTÉE
+              {agentMeta && <span style={{ color: '#94a3b8' }}>— {agentMeta.icon} {agentMeta.name}</span>}
+            </div>
+            <div style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, color: '#e2e8f0' }}>{task.title}</div>
+            {task.completedAt && (
+              <div style={{ fontFamily: 'monospace', fontSize: 9, color: '#4a6080', marginTop: 3 }}>
+                Complété le {new Date(task.completedAt).toLocaleString('fr-FR')}
+              </div>
+            )}
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: 4 }}><X size={15} /></button>
+        </div>
+
+        {/* Result */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          {task.result ? (
+            <pre style={{ fontFamily: 'monospace', fontSize: 12, color: '#c8d8e8', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.7, margin: 0 }}>
+              {task.result}
+            </pre>
+          ) : task.error ? (
+            <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#ef4444' }}>
+              ❌ Erreur: {task.error}
+            </div>
+          ) : (
+            <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#64748b' }}>Aucun résultat disponible.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── CreateTaskModal ──────────────────────────────────────────────────────────
 function CreateTaskModal({ onClose, onCreate }) {
   const [form, setForm] = useState({
@@ -61,6 +117,7 @@ function CreateTaskModal({ onClose, onCreate }) {
     description: '',
     priority: 'medium',
     category: 'other',
+    assignedTo: '',
   })
 
   const handleCreate = () => {
@@ -161,6 +218,39 @@ function CreateTaskModal({ onClose, onCreate }) {
               </div>
             </div>
           </div>
+          {/* Assign to agent */}
+          <div>
+            <label className="text-[10px] font-mono font-bold text-mc-muted uppercase tracking-wider block mb-2">
+              Assigner à un agent <span style={{ color: '#3b82f6' }}>(l&apos;orchestrateur exécutera automatiquement)</span>
+            </label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setForm((f) => ({ ...f, assignedTo: '' }))}
+                style={{
+                  padding: '5px 10px', fontFamily: 'monospace', fontSize: 10, cursor: 'pointer',
+                  background: !form.assignedTo ? 'rgba(148,163,184,0.15)' : 'transparent',
+                  border: `1px solid ${!form.assignedTo ? '#94a3b8' : '#2a3a50'}`,
+                  color: !form.assignedTo ? '#94a3b8' : '#64748b',
+                }}
+              >
+                Non assigné
+              </button>
+              {ASSIGNABLE_AGENTS.map((a) => (
+                <button
+                  key={a.id}
+                  onClick={() => setForm((f) => ({ ...f, assignedTo: a.id }))}
+                  style={{
+                    padding: '5px 10px', fontFamily: 'monospace', fontSize: 10, cursor: 'pointer',
+                    background: form.assignedTo === a.id ? 'rgba(59,130,246,0.15)' : 'transparent',
+                    border: `1px solid ${form.assignedTo === a.id ? 'rgba(59,130,246,0.5)' : '#2a3a50'}`,
+                    color: form.assignedTo === a.id ? '#3b82f6' : '#64748b',
+                  }}
+                >
+                  {a.icon} {a.name}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div style={{ display: 'flex', gap: 8, padding: '0 20px 20px', justifyContent: 'flex-end' }}>
@@ -180,11 +270,12 @@ function CreateTaskModal({ onClose, onCreate }) {
 }
 
 // ── TaskRow ──────────────────────────────────────────────────────────────────
-function TaskRow({ task, onUpdate, onDelete }) {
+function TaskRow({ task, onUpdate, onDelete, onViewResult }) {
   const sCfg = STATUS_CFG[task.status] || STATUS_CFG.todo
   const pCfg = PRIORITY_CFG[task.priority] || PRIORITY_CFG.medium
   const cCfg = CATEGORY_CFG[task.category] || CATEGORY_CFG.other
   const StatusIcon = sCfg.icon
+  const agentMeta  = ASSIGNABLE_AGENTS.find((a) => a.id === task.assignedTo)
 
   const cycleStatus = () => {
     const next = task.status === 'todo' ? 'in-progress' : task.status === 'in-progress' ? 'done' : 'todo'
@@ -194,7 +285,7 @@ function TaskRow({ task, onUpdate, onDelete }) {
   return (
     <div className={clsx(
       'flex items-center gap-3 px-4 py-3 border-b border-mc-border/50 hover:bg-mc-panel/30 transition-colors group',
-      task.status === 'done' && 'opacity-50',
+      task.status === 'done' && 'opacity-60',
     )}>
       {/* Status toggle */}
       <button
@@ -230,10 +321,10 @@ function TaskRow({ task, onUpdate, onDelete }) {
         {cCfg.icon} {cCfg.label}
       </span>
 
-      {/* Assigned badge */}
-      {task.assignedToName && (
+      {/* Assigned agent badge */}
+      {(agentMeta || task.assignedToName) && (
         <span className="shrink-0 text-[9px] font-mono px-2 py-0.5 bg-blue-500/10 border border-blue-500/20 text-blue-400">
-          → {task.assignedToName}
+          {agentMeta ? `${agentMeta.icon} ${agentMeta.name}` : `→ ${task.assignedToName}`}
         </span>
       )}
 
@@ -244,6 +335,23 @@ function TaskRow({ task, onUpdate, onDelete }) {
       >
         {sCfg.label}
       </span>
+
+      {/* "Voir résultat" — visible only when done with result */}
+      {(task.status === 'done' || task.status === 'error') && (task.result || task.error) && (
+        <button
+          onClick={() => onViewResult(task)}
+          className="shrink-0"
+          style={{
+            background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)',
+            color: task.status === 'error' ? '#ef4444' : '#22c55e',
+            cursor: 'pointer', padding: '3px 8px',
+            fontFamily: 'monospace', fontSize: 9, display: 'flex', alignItems: 'center', gap: 4,
+          }}
+          title="Voir le résultat de l'agent"
+        >
+          <Eye size={10} /> Résultat
+        </button>
+      )}
 
       {/* Delete */}
       <button
@@ -267,6 +375,7 @@ export default function TaskManager() {
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterAgent, setFilterAgent]   = useState('all')
   const [dispatchResult, setDispatchResult] = useState(null)
+  const [resultTask, setResultTask]   = useState(null)
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -277,7 +386,12 @@ export default function TaskManager() {
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { fetchTasks() }, [fetchTasks])
+  useEffect(() => {
+    fetchTasks()
+    // Auto-refresh every 8s so in-progress tasks update when orchestrator finishes
+    const interval = setInterval(fetchTasks, 8_000)
+    return () => clearInterval(interval)
+  }, [fetchTasks])
 
   const handleCreate = async (form) => {
     try {
@@ -463,6 +577,7 @@ export default function TaskManager() {
                 task={task}
                 onUpdate={handleUpdate}
                 onDelete={handleDelete}
+                onViewResult={setResultTask}
               />
             ))}
           </div>
@@ -470,6 +585,7 @@ export default function TaskManager() {
       </div>
 
       {showCreate && <CreateTaskModal onClose={() => setShowCreate(false)} onCreate={handleCreate} />}
+      {resultTask  && <ResultModal task={resultTask} onClose={() => setResultTask(null)} />}
     </div>
   )
 }
