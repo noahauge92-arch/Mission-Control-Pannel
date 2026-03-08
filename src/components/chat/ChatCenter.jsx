@@ -1,41 +1,26 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Send, RefreshCw, MessageSquare } from 'lucide-react'
-import clsx from 'clsx'
 
-// ── Agent registry (system agents always present) ─────────────────────────────
+// ── Agent registry ────────────────────────────────────────────────────────────
+
+const GROUP_AGENT = {
+  id: 'group', name: 'Discussion Groupe', role: 'Le Patron coordonne tous les agents',
+  icon: '💬', color: '#a855f7',
+  badge: 'Multi-Agent', badgeColor: 'rgba(168,85,247,0.12)', badgeBorder: 'rgba(168,85,247,0.35)', badgeText: '#a855f7',
+}
+
 const SYSTEM_AGENTS = [
   {
-    id: 'boss',
-    name: 'Baby Boss',
-    role: 'Chef de Projet',
-    icon: '👑',
-    color: '#f59e0b',
-    badge: 'DeepSeek',
-    badgeColor: 'rgba(245,158,11,0.15)',
-    badgeBorder: 'rgba(245,158,11,0.35)',
-    badgeText: '#f59e0b',
+    id: 'boss', name: 'Baby Boss', role: 'Chef de Projet', icon: '👑', color: '#f59e0b',
+    badge: 'DeepSeek', badgeColor: 'rgba(245,158,11,0.15)', badgeBorder: 'rgba(245,158,11,0.35)', badgeText: '#f59e0b',
   },
   {
-    id: 'alfred',
-    name: 'Alfred',
-    role: 'Trading Agent — Polymarket',
-    icon: '⚙️',
-    color: '#22c55e',
-    badge: 'local',
-    badgeColor: 'rgba(34,197,94,0.1)',
-    badgeBorder: 'rgba(34,197,94,0.3)',
-    badgeText: '#22c55e',
+    id: 'alfred', name: 'Alfred', role: 'Trading Agent — Polymarket', icon: '⚙️', color: '#22c55e',
+    badge: 'local', badgeColor: 'rgba(34,197,94,0.1)', badgeBorder: 'rgba(34,197,94,0.3)', badgeText: '#22c55e',
   },
   {
-    id: 'balthazar',
-    name: 'Balthazar',
-    role: 'Scraping & Coding',
-    icon: '📰',
-    color: '#3b82f6',
-    badge: 'local',
-    badgeColor: 'rgba(59,130,246,0.1)',
-    badgeBorder: 'rgba(59,130,246,0.3)',
-    badgeText: '#3b82f6',
+    id: 'balthazar', name: 'Balthazar', role: 'Scraping & Coding', icon: '📰', color: '#3b82f6',
+    badge: 'local', badgeColor: 'rgba(59,130,246,0.1)', badgeBorder: 'rgba(59,130,246,0.3)', badgeText: '#3b82f6',
   },
 ]
 
@@ -44,68 +29,73 @@ function TypingIndicator({ color }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '10px 14px' }}>
       {[0, 1, 2].map((i) => (
-        <div
-          key={i}
-          style={{
-            width: 7, height: 7, borderRadius: '50%', background: color,
-            animation: `chat-bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
-          }}
-        />
+        <div key={i} style={{
+          width: 7, height: 7, borderRadius: '50%', background: color,
+          animation: `chat-bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
+        }} />
       ))}
     </div>
   )
 }
 
 // ── Bubble ────────────────────────────────────────────────────────────────────
-function Bubble({ role, content, agentColor, agentIcon, ts }) {
-  const isUser = role === 'user'
+// groupAgent = { id, name, icon, color } for group-mode messages
+function Bubble({ role, content, agentColor, agentIcon, ts, groupAgent }) {
+  const isUser       = role === 'user'
+  const displayColor = groupAgent?.color ?? agentColor
+  const displayIcon  = groupAgent?.icon  ?? agentIcon
+
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: isUser ? 'row-reverse' : 'row',
-      alignItems: 'flex-end',
-      gap: 8,
-      marginBottom: 12,
-    }}>
-      {/* Avatar */}
-      {!isUser && (
+    <div style={{ marginBottom: 14 }}>
+      {/* Agent name label (group mode only) */}
+      {!isUser && groupAgent?.name && (
         <div style={{
-          width: 28, height: 28, borderRadius: 4, flexShrink: 0,
-          background: `${agentColor}22`, border: `1.5px solid ${agentColor}44`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 14, marginBottom: 2,
+          fontFamily: 'monospace', fontSize: 9, color: displayColor,
+          marginBottom: 3, paddingLeft: 36,
+          textTransform: 'uppercase', letterSpacing: '0.08em',
         }}>
-          {agentIcon}
+          {groupAgent.name}
         </div>
       )}
-
-      {/* Message */}
-      <div style={{
-        maxWidth: '72%',
-        background: isUser
-          ? 'linear-gradient(135deg, rgba(245,158,11,0.18), rgba(180,100,0,0.22))'
-          : 'rgba(255,255,255,0.04)',
-        border: isUser
-          ? '1px solid rgba(245,158,11,0.3)'
-          : '1px solid rgba(255,255,255,0.07)',
-        borderRadius: isUser ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-        padding: '10px 14px',
-      }}>
-        <div style={{
-          fontFamily: 'monospace', fontSize: 12, lineHeight: 1.6,
-          color: isUser ? '#f5c886' : '#c8d8e8',
-          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-        }}>
-          {content}
-        </div>
-        {ts && (
+      <div style={{ display: 'flex', flexDirection: isUser ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: 8 }}>
+        {/* Avatar */}
+        {!isUser && (
           <div style={{
-            fontFamily: 'monospace', fontSize: 9, color: 'rgba(255,255,255,0.2)',
-            marginTop: 4, textAlign: isUser ? 'left' : 'right',
+            width: 28, height: 28, borderRadius: 4, flexShrink: 0,
+            background: `${displayColor}22`, border: `1.5px solid ${displayColor}44`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, marginBottom: 2,
           }}>
-            {new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+            {displayIcon}
           </div>
         )}
+        {/* Content */}
+        <div style={{
+          maxWidth: '72%',
+          background: isUser
+            ? 'linear-gradient(135deg, rgba(245,158,11,0.18), rgba(180,100,0,0.22))'
+            : 'rgba(255,255,255,0.04)',
+          border: isUser
+            ? '1px solid rgba(245,158,11,0.3)'
+            : `1px solid ${displayColor}20`,
+          borderRadius: isUser ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+          padding: '10px 14px',
+        }}>
+          <div style={{
+            fontFamily: 'monospace', fontSize: 12, lineHeight: 1.6,
+            color: isUser ? '#f5c886' : '#c8d8e8',
+            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+          }}>
+            {content}
+          </div>
+          {ts && (
+            <div style={{
+              fontFamily: 'monospace', fontSize: 9, color: 'rgba(255,255,255,0.2)',
+              marginTop: 4, textAlign: isUser ? 'left' : 'right',
+            }}>
+              {new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -117,24 +107,20 @@ function AgentListItem({ agent, active, onClick, processStatus }) {
     ? processStatus?.alfred
     : agent.id === 'balthazar'
     ? processStatus?.balthazar
-    : null // custom agents: no live status check
+    : null
 
-  const dotColor = isRunning === true ? '#22c55e' : isRunning === false ? '#ef4444' : '#94a3b8'
+  const dotColor = isRunning === true ? '#22c55e' : isRunning === false ? '#ef4444' : null
 
   return (
     <button
       onClick={onClick}
       style={{
-        width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
-        padding: '10px 14px',
+        width: '100%', textAlign: 'left', background: active ? `${agent.color}10` : 'none',
+        border: 'none', cursor: 'pointer', padding: '10px 14px',
         borderLeft: active ? `3px solid ${agent.color}` : '3px solid transparent',
-        background: active ? `${agent.color}10` : 'transparent',
-        transition: 'all 0.12s',
-        display: 'flex', alignItems: 'center', gap: 10,
+        transition: 'all 0.12s', display: 'flex', alignItems: 'center', gap: 10,
       }}
-      className="hover:bg-mc-panel/40"
     >
-      {/* Icon */}
       <div style={{
         width: 36, height: 36, borderRadius: 6, flexShrink: 0,
         background: `${agent.color}18`, border: `1.5px solid ${agent.color}35`,
@@ -145,10 +131,14 @@ function AgentListItem({ agent, active, onClick, processStatus }) {
 
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: active ? agent.color : '#c8d8e8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          <span style={{
+            fontFamily: 'monospace', fontSize: 12, fontWeight: 700,
+            color: active ? agent.color : '#c8d8e8',
+            textTransform: 'uppercase', letterSpacing: '0.04em',
+          }}>
             {agent.name}
           </span>
-          {isRunning !== null && (
+          {dotColor && (
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, flexShrink: 0, boxShadow: `0 0 4px ${dotColor}` }} />
           )}
         </div>
@@ -172,35 +162,30 @@ function AgentListItem({ agent, active, onClick, processStatus }) {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function ChatCenter() {
-  const [customAgents, setCustomAgents]     = useState([])
-  const [processStatus, setProcessStatus]   = useState({})
-  const [activeAgentId, setActiveAgentId]   = useState('boss')
-  const [messages, setMessages]             = useState([])
-  const [input, setInput]                   = useState('')
-  const [typing, setTyping]                 = useState(false)
-  const [historyLoaded, setHistoryLoaded]   = useState({})
+  const [customAgents, setCustomAgents]   = useState([])
+  const [processStatus, setProcessStatus] = useState({})
+  const [activeAgentId, setActiveAgentId] = useState('group')
+  const [messages, setMessages]           = useState([])
+  const [input, setInput]                 = useState('')
+  const [typing, setTyping]               = useState(false)
+  const [historyLoaded, setHistoryLoaded] = useState({})
   const bottomRef = useRef(null)
   const inputRef  = useRef(null)
 
-  // Build full agent list
+  // Full agent list (group at top)
   const allAgents = [
+    GROUP_AGENT,
     ...SYSTEM_AGENTS,
     ...customAgents.map((a) => ({
-      id: a.id,
-      name: a.name,
-      role: a.role || 'Custom Agent',
-      icon: '🤖',
-      color: a.color || '#a855f7',
-      badge: 'DeepSeek',
-      badgeColor: 'rgba(168,85,247,0.1)',
-      badgeBorder: 'rgba(168,85,247,0.3)',
-      badgeText: '#a855f7',
+      id: a.id, name: a.name, role: a.role || 'Custom Agent',
+      icon: '🤖', color: a.color || '#a855f7',
+      badge: 'DeepSeek', badgeColor: 'rgba(168,85,247,0.1)', badgeBorder: 'rgba(168,85,247,0.3)', badgeText: '#a855f7',
     })),
   ]
 
   const activeAgent = allAgents.find((a) => a.id === activeAgentId) ?? allAgents[0]
 
-  // Inject CSS animations once
+  // Inject CSS once
   useEffect(() => {
     const id = 'chat-animations'
     if (document.getElementById(id)) return
@@ -215,7 +200,7 @@ export default function ChatCenter() {
     document.head.appendChild(style)
   }, [])
 
-  // Load custom agents + process status
+  // Load custom agents + poll process status
   useEffect(() => {
     const init = async () => {
       try {
@@ -223,16 +208,13 @@ export default function ChatCenter() {
           fetch('/api/agents'),
           fetch('/api/agents/status').catch(() => null),
         ])
-        setCustomAgents(await agentsRes.json())
+        if (agentsRes.ok) setCustomAgents(await agentsRes.json())
         if (statusRes?.ok) setProcessStatus(await statusRes.json())
       } catch {}
     }
     init()
     const interval = setInterval(async () => {
-      try {
-        const r = await fetch('/api/agents/status')
-        if (r.ok) setProcessStatus(await r.json())
-      } catch {}
+      try { const r = await fetch('/api/agents/status'); if (r.ok) setProcessStatus(await r.json()) } catch {}
     }, 10_000)
     return () => clearInterval(interval)
   }, [])
@@ -245,56 +227,71 @@ export default function ChatCenter() {
         const r = await fetch(`/api/chat/${activeAgentId}/history`)
         if (!r.ok) return
         const hist = await r.json()
-        if (hist.length) {
-          setMessages((prev) => {
-            // Only set if no local messages for this agent yet
-            const hasLocal = prev.some((m) => m.agentId === activeAgentId)
-            if (hasLocal) return prev
-            return [...prev, ...hist.map((m) => ({ ...m, agentId: activeAgentId }))]
-          })
-          setHistoryLoaded((h) => ({ ...h, [activeAgentId]: true }))
-        }
+        if (!hist.length) return
+        setMessages((prev) => {
+          if (prev.some((m) => m.agentId === activeAgentId)) return prev
+          return [
+            ...prev,
+            ...hist.map((m) => {
+              // Group history: assistant messages have agentId/agentName/agentIcon/agentColor
+              if (activeAgentId === 'group' && m.role === 'assistant' && m.agentName) {
+                return {
+                  ...m,
+                  agentId: 'group',
+                  groupAgent: { id: m.agentId ?? 'boss', name: m.agentName, icon: m.agentIcon ?? '🤖', color: m.agentColor ?? '#a855f7' },
+                }
+              }
+              return { ...m, agentId: activeAgentId }
+            }),
+          ]
+        })
+        setHistoryLoaded((h) => ({ ...h, [activeAgentId]: true }))
       } catch {}
     }
     load()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeAgentId])
 
-  // Auto-scroll
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, typing])
-
-  // Focus input on agent switch
-  useEffect(() => {
-    inputRef.current?.focus()
-  }, [activeAgentId])
+  // Auto-scroll + focus
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, typing])
+  useEffect(() => { inputRef.current?.focus() }, [activeAgentId])
 
   const visibleMessages = messages.filter((m) => m.agentId === activeAgentId)
-
-  const buildHistory = () =>
-    visibleMessages.slice(-10).map((m) => ({ role: m.role, content: m.content }))
+  const buildHistory    = () => visibleMessages.slice(-10).map((m) => ({ role: m.role, content: m.content }))
 
   const sendMessage = useCallback(async () => {
     const text = input.trim()
     if (!text || typing) return
     setInput('')
-
-    const userMsg = { role: 'user', content: text, agentId: activeAgentId, ts: Date.now() }
-    setMessages((m) => [...m, userMsg])
+    setMessages((m) => [...m, { role: 'user', content: text, agentId: activeAgentId, ts: Date.now() }])
     setTyping(true)
 
     try {
-      const r = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          agentId: activeAgentId,
-          message: text,
-          history: buildHistory(),
-        }),
-      })
-      const { reply } = await r.json()
-      setMessages((m) => [...m, { role: 'assistant', content: reply, agentId: activeAgentId, ts: Date.now() }])
+      if (activeAgentId === 'group') {
+        // ── Group mode: Le Patron coordinates all agents ──────────────────
+        const r = await fetch('/api/chat/group', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ message: text, history: buildHistory() }),
+        })
+        const { messages: groupMsgs = [] } = await r.json()
+        setMessages((prev) => [
+          ...prev,
+          ...groupMsgs.map((m) => ({
+            role: 'assistant', content: m.content, agentId: 'group', ts: m.ts ?? Date.now(),
+            groupAgent: { id: m.id, name: m.name, icon: m.icon, color: m.color },
+          })),
+        ])
+      } else {
+        // ── Solo mode: direct agent chat ──────────────────────────────────
+        const r = await fetch('/api/chat', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ agentId: activeAgentId, message: text, history: buildHistory() }),
+        })
+        const { reply } = await r.json()
+        setMessages((m) => [...m, { role: 'assistant', content: reply, agentId: activeAgentId, ts: Date.now() }])
+      }
     } catch (e) {
       setMessages((m) => [...m, { role: 'assistant', content: `Erreur: ${e.message}`, agentId: activeAgentId, ts: Date.now() }])
     } finally {
@@ -302,18 +299,16 @@ export default function ChatCenter() {
     }
   }, [input, typing, activeAgentId, messages])
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
-  }
+  const handleKeyDown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }
 
   const clearChat = () => {
     setMessages((m) => m.filter((msg) => msg.agentId !== activeAgentId))
     setHistoryLoaded((h) => ({ ...h, [activeAgentId]: false }))
   }
 
-  // Welcome message for empty chat
   const welcomeHints = {
-    boss:      ['résumé de la situation', 'quelles sont les tâches en cours ?', 'analyse le P&L d\'Alfred'],
+    group:     ['quel est le statut de tout le monde ?', 'résumé complet de la situation', 'qu\'est-ce qu\'on fait aujourd\'hui ?'],
+    boss:      ['résumé de la situation', 'quelles tâches en cours ?', 'analyse le P&L d\'Alfred'],
     alfred:    ['pnl', 'status', 'positions', 'logs'],
     balthazar: ['news', 'status', 'logs'],
   }
@@ -326,14 +321,10 @@ export default function ChatCenter() {
         width: 250, flexShrink: 0,
         borderRight: '1px solid rgba(255,255,255,0.06)',
         background: '#060810',
-        display: 'flex', flexDirection: 'column',
-        overflow: 'hidden',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
         {/* Header */}
-        <div style={{
-          padding: '16px 14px 12px',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
-        }}>
+        <div style={{ padding: '16px 14px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <MessageSquare size={14} color="#f59e0b" />
             <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
@@ -341,48 +332,40 @@ export default function ChatCenter() {
             </span>
           </div>
           <div style={{ fontFamily: 'monospace', fontSize: 9, color: '#2a3a50', marginTop: 4 }}>
-            Boss: DeepSeek · Alfred/Balthazar: local
+            Groupe / Boss / Custom : DeepSeek · Alfred / Balthazar : local
           </div>
         </div>
 
         {/* Agent list */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          <div style={{ padding: '8px 0' }}>
-            {/* System agents */}
-            <div style={{ fontFamily: 'monospace', fontSize: 8, color: '#2a3a50', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '6px 14px 4px' }}>
-              Système
-            </div>
-            {SYSTEM_AGENTS.map((a) => (
-              <AgentListItem
-                key={a.id}
-                agent={a}
-                active={activeAgentId === a.id}
-                onClick={() => setActiveAgentId(a.id)}
-                processStatus={processStatus}
-              />
-            ))}
-
-            {/* Custom agents */}
-            {customAgents.length > 0 && (
-              <>
-                <div style={{ fontFamily: 'monospace', fontSize: 8, color: '#2a3a50', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '12px 14px 4px' }}>
-                  Agents Custom
-                </div>
-                {customAgents.map((a) => {
-                  const agent = allAgents.find((ag) => ag.id === a.id)
-                  return agent ? (
-                    <AgentListItem
-                      key={a.id}
-                      agent={agent}
-                      active={activeAgentId === a.id}
-                      onClick={() => setActiveAgentId(a.id)}
-                      processStatus={processStatus}
-                    />
-                  ) : null
-                })}
-              </>
-            )}
+          {/* Group tab — always at top */}
+          <div style={{ padding: '6px 0 0' }}>
+            <AgentListItem agent={GROUP_AGENT} active={activeAgentId === 'group'} onClick={() => setActiveAgentId('group')} processStatus={processStatus} />
           </div>
+          <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '4px 14px' }} />
+
+          {/* System agents */}
+          <div style={{ fontFamily: 'monospace', fontSize: 8, color: '#2a3a50', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '6px 14px 4px' }}>
+            Système
+          </div>
+          {SYSTEM_AGENTS.map((a) => (
+            <AgentListItem key={a.id} agent={a} active={activeAgentId === a.id} onClick={() => setActiveAgentId(a.id)} processStatus={processStatus} />
+          ))}
+
+          {/* Custom agents (Hugo etc.) */}
+          {customAgents.length > 0 && (
+            <>
+              <div style={{ fontFamily: 'monospace', fontSize: 8, color: '#2a3a50', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '12px 14px 4px' }}>
+                Agents Custom
+              </div>
+              {customAgents.map((a) => {
+                const agent = allAgents.find((ag) => ag.id === a.id)
+                return agent
+                  ? <AgentListItem key={a.id} agent={agent} active={activeAgentId === a.id} onClick={() => setActiveAgentId(a.id)} processStatus={processStatus} />
+                  : null
+              })}
+            </>
+          )}
         </div>
       </div>
 
@@ -413,11 +396,7 @@ export default function ChatCenter() {
               </div>
             </div>
           </div>
-          <button
-            onClick={clearChat}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2a3a50', padding: 4, display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'monospace', fontSize: 10 }}
-            title="Effacer l'historique local"
-          >
+          <button onClick={clearChat} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2a3a50', padding: 4, display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'monospace', fontSize: 10 }} title="Effacer l'historique local">
             <RefreshCw size={11} /> Effacer
           </button>
         </div>
@@ -428,11 +407,13 @@ export default function ChatCenter() {
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 20 }}>
               <div style={{ fontSize: 48, opacity: 0.4 }}>{activeAgent.icon}</div>
               <div style={{ fontFamily: 'monospace', fontSize: 13, color: '#2a4060', textAlign: 'center', lineHeight: 1.8 }}>
-                Parle à <span style={{ color: activeAgent.color }}>{activeAgent.name}</span>
+                {activeAgentId === 'group'
+                  ? <>Parle à <span style={{ color: '#a855f7' }}>toute l&apos;équipe</span> — Le Patron distribue aux agents</>
+                  : <>Parle à <span style={{ color: activeAgent.color }}>{activeAgent.name}</span></>
+                }
               </div>
-              {/* Quick hint buttons */}
               {(welcomeHints[activeAgentId] || []).length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', maxWidth: 360 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', maxWidth: 420 }}>
                   {(welcomeHints[activeAgentId] || []).map((hint) => (
                     <button
                       key={hint}
@@ -459,6 +440,7 @@ export default function ChatCenter() {
                   agentColor={activeAgent.color}
                   agentIcon={activeAgent.icon}
                   ts={m.ts}
+                  groupAgent={m.groupAgent}
                 />
               ))}
               {typing && (
@@ -470,10 +452,7 @@ export default function ChatCenter() {
                   }}>
                     {activeAgent.icon}
                   </div>
-                  <div style={{
-                    background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)',
-                    borderRadius: '12px 12px 12px 2px',
-                  }}>
+                  <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px 12px 12px 2px' }}>
                     <TypingIndicator color={activeAgent.color} />
                   </div>
                 </div>
@@ -488,15 +467,18 @@ export default function ChatCenter() {
           padding: '12px 16px',
           borderTop: '1px solid rgba(255,255,255,0.06)',
           background: 'rgba(0,0,0,0.15)',
-          display: 'flex', gap: 8, alignItems: 'flex-end',
-          flexShrink: 0,
+          display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0,
         }}>
           <textarea
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={`Message ${activeAgent.name}… (Entrée pour envoyer, Shift+Entrée = nouvelle ligne)`}
+            placeholder={
+              activeAgentId === 'group'
+                ? 'Message à toute l\'équipe… Le Patron coordonne et distribue les réponses'
+                : `Message ${activeAgent.name}… (Entrée pour envoyer, Shift+Entrée = nouvelle ligne)`
+            }
             rows={1}
             style={{
               flex: 1, background: 'rgba(255,255,255,0.04)',

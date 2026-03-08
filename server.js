@@ -576,6 +576,107 @@ app.get('/api/chat/:agentId/history', (req, res) => {
   res.json(readChatHistory(req.params.agentId))
 })
 
+// ── Group discussion — Le Patron coordonne tous les agents ────────────────────
+
+app.post('/api/chat/group', async (req, res) => {
+  const { message, history = [] } = req.body
+  if (!message?.trim()) return res.status(400).json({ error: 'message required' })
+
+  const s            = readJSON(join(ALFRED_DIR, 'state.json'))
+  const customAgents = readAgents()
+  const tasks        = readTasks()
+  const t  = s.total_trades ?? s.totalTrades ?? 0
+  const wr = t > 0 ? Math.round((s.wins ?? 0) / t * 100) : 0
+
+  const agentList = [
+    { id: 'alfred',    name: 'Alfred',    role: 'Trading Polymarket 24/7' },
+    { id: 'balthazar', name: 'Balthazar', role: 'Coding & scraping news'  },
+    ...customAgents.map((a) => ({ id: a.id, name: a.name, role: a.role || 'Agent custom' })),
+  ]
+
+  const systemPrompt =
+`Tu es Le Patron, CEO de l'écosystème IA OpenClaw de Noah.
+Tu coordonnes une équipe d'agents IA :
+${agentList.map((a) => `- ${a.name}: ${a.role}`).join('\n')}
+
+Contexte temps réel :
+- Alfred: Bank=${Number(s.bank ?? s.balance ?? 0).toFixed(2)}$, P&L=${Number(s.pnl_alltime ?? s.total_pnl ?? s.allTimePnl ?? 0).toFixed(2)}$, Trades=${t}, WR=${wr}%, Régime=${s.regime ?? s.market_regime ?? 'NORMAL'}
+- Tâches: ${tasks.filter((tk) => tk.status === 'todo').length} todo | ${tasks.filter((tk) => tk.status === 'in-progress').length} en cours | ${tasks.filter((tk) => tk.status === 'done').length} done
+
+INSTRUCTIONS CRITIQUES :
+1. Réponds avec ce format exact — un agent par bloc :
+   [LE PATRON]: ta coordination (toujours présent en premier)
+   [ALFRED]: réponse si pertinent
+   [BALTHAZAR]: réponse si pertinent
+   [NOM_AGENT]: réponse si pertinent
+2. Inclus SEULEMENT les agents qui ont quelque chose d'utile à dire
+3. Réponds en français, concis et actionnable`
+
+  try {
+    const apiKey   = process.env.DEEPSEEK_API_KEY || 'sk-ca1cb73de7124b8fb2a0aa1d11ca227a'
+    const response = await fetch('https://api.deepseek.com/chat/completions', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model:      'deepseek-chat',
+        max_tokens: 800,
+        messages:   [
+          { role: 'system', content: systemPrompt },
+          ...history.slice(-8),
+          { role: 'user', content: message },
+        ],
+      }),
+    })
+    const data = await response.json()
+    const text = data.choices?.[0]?.message?.content ?? ''
+
+    // Known agent colour map (upper-cased key → display info)
+    const AGENT_MAP = {
+      'LE PATRON': { id: 'boss',      name: 'Le Patron',  icon: '👑', color: '#f59e0b' },
+      'ALFRED':    { id: 'alfred',    name: 'Alfred',     icon: '⚙️', color: '#22c55e' },
+      'BALTHAZAR': { id: 'balthazar', name: 'Balthazar',  icon: '📰', color: '#3b82f6' },
+      ...Object.fromEntries(
+        customAgents.map((a) => [
+          a.name.toUpperCase(),
+          { id: a.id, name: a.name, icon: '🤖', color: a.color || '#a855f7' },
+        ])
+      ),
+    }
+
+    // Parse [AGENT]: content blocks
+    const parsed  = []
+    let   current = null
+    for (const line of text.split('\n')) {
+      const m = line.match(/^\[([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ\s\-]+)\]:\s*(.*)/)
+      if (m) {
+        if (current) parsed.push(current)
+        const key  = m[1].trim()
+        const info = AGENT_MAP[key] ?? { id: key.toLowerCase().replace(/\s+/g, '-'), name: key, icon: '🤖', color: '#a855f7' }
+        current = { ...info, content: m[2], ts: Date.now() }
+      } else if (current && line.trim()) {
+        current.content += '\n' + line
+      }
+    }
+    if (current) parsed.push(current)
+
+    const messages = parsed.length
+      ? parsed.map((m) => ({ ...m, content: m.content.trim() })).filter((m) => m.content)
+      : [{ id: 'boss', name: 'Le Patron', icon: '👑', color: '#f59e0b', content: text, ts: Date.now() }]
+
+    // Persist group history (agent meta included for UI reconstruction)
+    const hist = readChatHistory('group')
+    hist.push({ role: 'user', content: message, ts: Date.now() })
+    messages.forEach((m) => {
+      hist.push({ role: 'assistant', agentId: m.id, agentName: m.name, agentIcon: m.icon, agentColor: m.color, content: m.content, ts: Date.now() })
+    })
+    saveChatHistory('group', hist)
+
+    res.json({ messages })
+  } catch (e) {
+    res.json({ messages: [{ id: 'boss', name: 'Le Patron', icon: '👑', color: '#f59e0b', content: `Erreur: ${e.message}`, ts: Date.now() }] })
+  }
+})
+
 // ── Health check ──────────────────────────────────────────────────────────────
 
 app.get('/api/health', (_req, res) => {
