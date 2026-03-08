@@ -18,11 +18,26 @@ import crypto from 'crypto'
 
 const app = express()
 const PORT = 3001
-const ALFRED_DIR  = join(homedir(), '.openclaw', 'alfred')
-const SKILLS_DIR  = join(homedir(), '.openclaw', 'skills')
+const HOME        = homedir()
+const ALFRED_DIR  = join(HOME, '.openclaw', 'alfred')
+const SKILLS_DIR  = join(HOME, '.openclaw', 'skills')
 const AGENTS_FILE = join(ALFRED_DIR, 'agents.json')
 const BOSS_FILE   = join(ALFRED_DIR, 'boss.json')
 const TASKS_FILE  = join(ALFRED_DIR, 'tasks.json')
+
+// ── Per-agent directories (each agent owns its state + chat history) ──────────
+const AGENT_DIRS = {
+  alfred:    ALFRED_DIR,
+  balthazar: join(HOME, '.openclaw', 'balthazar'),
+  boss:      join(HOME, '.openclaw', 'patron'),
+  group:     join(HOME, '.openclaw', 'groupe'),
+}
+// Create all dirs on startup (agents added later via /api/agents will be created on demand)
+;[ALFRED_DIR, SKILLS_DIR, ...Object.values(AGENT_DIRS)].forEach((d) => mkdirSync(d, { recursive: true }))
+
+function agentDir(agentId) {
+  return AGENT_DIRS[agentId] ?? join(HOME, '.openclaw', agentId)
+}
 
 app.use(cors())
 app.use(express.json())
@@ -406,15 +421,17 @@ app.get('/api/alfred/mode', (_req, res) => {
 // ── Chat helpers ──────────────────────────────────────────────────────────────
 
 function readChatHistory(agentId) {
-  const file = join(ALFRED_DIR, `chat-${agentId}.json`)
+  const dir  = agentDir(agentId)
+  const file = join(dir, 'chat.json')
   if (!existsSync(file)) return []
   try { return JSON.parse(readFileSync(file, 'utf-8')) }
   catch { return [] }
 }
 
 function saveChatHistory(agentId, history) {
-  mkdirSync(ALFRED_DIR, { recursive: true })
-  writeFileSync(join(ALFRED_DIR, `chat-${agentId}.json`), JSON.stringify(history.slice(-50), null, 2))
+  const dir = agentDir(agentId)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'chat.json'), JSON.stringify(history.slice(-50), null, 2))
 }
 
 // ── Universal chat endpoint ───────────────────────────────────────────────────
@@ -496,36 +513,7 @@ app.post('/api/chat', async (req, res) => {
     return res.json({ reply })
   }
 
-  // ── Balthazar (keyword matching) ──────────────────────────────────────────
-  if (agentId === 'balthazar') {
-    const running = isProcessRunning('balthazar.mjs')
-    let reply
-
-    if (msg.includes('news')) {
-      const feed = readJSON(join(ALFRED_DIR, 'news-feed.json'))
-      if (Array.isArray(feed) && feed.length) {
-        const top = feed.slice(0, 5).map((n) => `• [${n.category ?? 'news'}] ${n.title}`).join('\n')
-        reply = `📰 Dernières news:\n${top}`
-      } else {
-        reply = '📰 Aucune news disponible.'
-      }
-    } else if (msg.includes('log')) {
-      const lines = await tailFile('/tmp/balthazar.log', 10)
-      reply = `📋 Logs Balthazar:\n${lines.length ? lines.join('\n') : 'Aucun log.'}`
-    } else if (msg.includes('status') || msg.includes('statut')) {
-      reply = `📰 Balthazar — ${running ? '🟢 actif' : '🔴 offline'}\nRôle: scraping actualités & codeur web GitHub`
-    } else {
-      reply = `📰 Balthazar — ${running ? '🟢 actif' : '🔴 offline'}\nCommandes: news · status · logs`
-    }
-
-    const hist = readChatHistory('balthazar')
-    hist.push({ role: 'user', content: message, ts: Date.now() })
-    hist.push({ role: 'assistant', content: reply, ts: Date.now() })
-    saveChatHistory('balthazar', hist)
-    return res.json({ reply })
-  }
-
-  // ── Baby Boss + agents custom → DeepSeek ─────────────────────────────────
+  // ── All other agents (Balthazar, Boss, custom) → DeepSeek ───────────────
   const s      = readJSON(join(ALFRED_DIR, 'state.json'))
   const agents = readAgents()
   const tasks  = readTasks()
@@ -536,13 +524,18 @@ app.post('/api/chat', async (req, res) => {
     ? `Tu es Baby Boss, chef de projet de l'écosystème OpenClaw de Noah.
 Tu gères:
 - Alfred (trading Polymarket): Bank=${Number(s.bank ?? s.balance ?? 0).toFixed(2)}$, P&L all-time=${Number(s.pnl_alltime ?? s.total_pnl ?? s.allTimePnl ?? 0).toFixed(2)}$, Trades=${t}, WR=${wr}%, Régime=${s.regime ?? s.market_regime ?? 'NORMAL'}
-- Balthazar (scraping news & coding)
+- Balthazar (codeur GitHub & scraping news)
 - Agents custom: ${agents.map((a) => `${a.name} (${a.role})`).join(', ') || 'aucun'}
 - Tâches: ${tasks.filter((tk) => tk.status === 'todo').length} todo | ${tasks.filter((tk) => tk.status === 'in-progress').length} en cours | ${tasks.filter((tk) => tk.status === 'done').length} done
 Réponds en français, concis et actionnable.`
+    : agentId === 'balthazar'
+    ? `Tu es Balthazar, agent IA codeur et analyste de l'écosystème OpenClaw de Noah.
+Ton rôle: développement GitHub, création de sites web et apps, scraping d'actualités, analyse de données.
+Tu es expert en JavaScript/Node.js, React, APIs, et automatisation.
+Tu réponds en français, de façon précise et technique quand c'est pertinent.`
     : (() => {
         const agent = agents.find((a) => a.id === agentId)
-        return `Tu es ${agent?.name ?? 'un agent'}, rôle: ${agent?.role ?? 'assistant'}. Réponds en français, utile et concis.`
+        return `Tu es ${agent?.name ?? 'un agent IA'} dans l'écosystème OpenClaw de Noah.\nRôle: ${agent?.role ?? 'assistant IA'}.\nTu réponds en français, de façon utile et concise.`
       })()
 
   try {
