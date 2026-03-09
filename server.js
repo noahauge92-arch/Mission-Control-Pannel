@@ -30,7 +30,7 @@ const BOSS_FILE    = path.join(HOME, '.openclaw/alfred/boss.json')
 const SKILLS_DIR   = path.join(HOME, '.openclaw/skills')
 
 // Create agent dirs on startup
-;['alfred', 'balthazar', 'hugodecrypte', '2fois', 'patron', 'groupe'].forEach((a) =>
+;['alfred', 'balthazar', '2fois', 'patron', 'groupe'].forEach((a) =>
   fs.mkdirSync(path.join(HOME, `.openclaw/${a}`), { recursive: true })
 )
 fs.mkdirSync(SKILLS_DIR, { recursive: true })
@@ -99,10 +99,9 @@ app.get('/api/alfred/analytics', (_req, res) => {
 
 // ── Agents (no Alfred — it has its own endpoints) ─────────────────────────────
 const SYSTEM_AGENTS = [
-  { id: 'patron',       name: 'Le Patron',    icon: '👑', color: '#F59E0B', role: 'CEO & Coordinateur',  badge: 'DeepSeek' },
-  { id: 'balthazar',    name: 'Balthazar',    icon: '💻', color: '#8B5CF6', role: 'Dev & GitHub',        badge: 'DeepSeek' },
-  { id: 'hugodecrypte', name: 'Hugo Décrypte',icon: '🔍', color: '#3B82F6', role: 'News & Recherche',    badge: 'DeepSeek' },
-  { id: '2fois',        name: '2fois',         icon: '📱', color: '#EC4899', role: 'Réseaux Sociaux',     badge: 'DeepSeek' },
+  { id: 'patron',    name: 'Le Patron', icon: '👑', color: '#F59E0B', role: 'CEO & Coordinateur', badge: 'DeepSeek' },
+  { id: 'balthazar', name: 'Balthazar', icon: '💻', color: '#8B5CF6', role: 'Dev & GitHub',       badge: 'DeepSeek' },
+  { id: '2fois',     name: '2fois',     icon: '📱', color: '#EC4899', role: 'Réseaux Sociaux',    badge: 'DeepSeek' },
 ]
 
 app.get('/api/agents', (_req, res) => {
@@ -158,19 +157,20 @@ app.get('/api/tasks', (_req, res) => res.json(readJson(TASKS_FILE, [])))
 
 app.post('/api/tasks', (req, res) => {
   const tasks = readJson(TASKS_FILE, [])
-  const task  = {
-    id:          Date.now().toString(),
-    title:       req.body.title || '',
-    description: req.body.description || '',
-    priority:    req.body.priority || 'medium',
-    category:    req.body.category || 'other',
-    assignedTo:  req.body.assignedTo || null,
-    status:      'todo',
-    createdAt:   new Date().toISOString(),
-    updatedAt:   new Date().toISOString(),
+  const task = {
+    id:             Date.now().toString(),
+    title:          req.body.title || 'Sans titre',
+    description:    req.body.description || '',
+    priority:       req.body.priority || 'normal',
+    category:       req.body.category || 'other',
+    status:         'todo',
+    assignedTo:     req.body.assignedTo     || null,
+    assignedToName: req.body.assignedToName || null,
+    createdAt:      new Date().toISOString(),
+    updatedAt:      new Date().toISOString(),
   }
   tasks.push(task)
-  writeJson(TASKS_FILE, tasks)
+  fs.writeFileSync(TASKS_FILE, JSON.stringify(tasks, null, 2))
   res.json(task)
 })
 
@@ -209,18 +209,25 @@ app.get('/api/orchestrator/status', (_req, res) => {
 
 // ── DeepSeek ──────────────────────────────────────────────────────────────────
 async function deepseek(messages, systemPrompt, maxTokens = 400) {
-  const resp = await fetch('https://api.deepseek.com/chat/completions', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${DEEPSEEK_KEY}` },
-    body: JSON.stringify({
-      model:      'deepseek-chat',
-      max_tokens: maxTokens,
-      messages:   [{ role: 'system', content: systemPrompt }, ...messages.slice(-10)],
-    }),
-  })
-  if (!resp.ok) throw new Error(`DeepSeek HTTP ${resp.status}`)
-  const data = await resp.json()
-  return data.choices?.[0]?.message?.content || 'Pas de réponse.'
+  const controller = new AbortController()
+  const timeout    = setTimeout(() => controller.abort(), 90_000)
+  try {
+    const resp = await fetch('https://api.deepseek.com/chat/completions', {
+      signal:  controller.signal,
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${DEEPSEEK_KEY}` },
+      body: JSON.stringify({
+        model:      'deepseek-chat',
+        max_tokens: maxTokens,
+        messages:   [{ role: 'system', content: systemPrompt }, ...messages.slice(-10)],
+      }),
+    })
+    if (!resp.ok) throw new Error(`DeepSeek HTTP ${resp.status}`)
+    const data = await resp.json()
+    return data.choices?.[0]?.message?.content || 'Pas de réponse.'
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 function buildPrompt(agentId) {
@@ -240,11 +247,9 @@ function buildPrompt(agentId) {
 
   switch (agentId) {
     case 'patron':
-      return `${base} Tu es Le Patron, CEO qui coordonne toute l'équipe. ${alfCtx} Agents: Balthazar (code), Hugo Décrypte (news), 2fois (réseaux). Tâches todo: ${tasks.filter((t) => t.status === 'todo').length}.${taskCtx}`
+      return `${base} Tu es Le Patron, CEO qui coordonne toute l'équipe. ${alfCtx} Agents: Balthazar (code), 2fois (réseaux). Tâches todo: ${tasks.filter((t) => t.status === 'todo').length}.${taskCtx}`
     case 'balthazar':
       return `${base} Tu es Balthazar, développeur senior expert en Node.js, Python, GitHub. Tu codes, debugues, fais des PRs.${taskCtx}`
-    case 'hugodecrypte':
-      return `${base} Tu es Hugo Décrypte, expert en veille et analyse d'information. Tu analyses les actualités, tendances, fais des résumés analytiques.${taskCtx}`
     case '2fois':
       return `${base} Tu es 2fois, expert en réseaux sociaux et contenu. Twitter/X, TikTok, Instagram. Tu crées du contenu engageant et analyses les tendances.${taskCtx}`
     default: {
@@ -256,10 +261,9 @@ function buildPrompt(agentId) {
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 const GROUPE_META = {
-  patron:       { name: 'Le Patron',    icon: '👑', color: '#F59E0B' },
-  balthazar:    { name: 'Balthazar',    icon: '💻', color: '#8B5CF6' },
-  hugodecrypte: { name: 'Hugo Décrypte',icon: '🔍', color: '#3B82F6' },
-  '2fois':      { name: '2fois',        icon: '📱', color: '#EC4899' },
+  patron:    { name: 'Le Patron', icon: '👑', color: '#F59E0B' },
+  balthazar: { name: 'Balthazar', icon: '💻', color: '#8B5CF6' },
+  '2fois':   { name: '2fois',     icon: '📱', color: '#EC4899' },
 }
 
 app.post('/api/chat', async (req, res) => {
@@ -302,7 +306,8 @@ app.post('/api/chat', async (req, res) => {
     res.json({ reply })
   } catch (e) {
     console.error('Chat error:', e.message)
-    res.status(500).json({ error: e.message })
+    if (e.name === 'AbortError') return res.status(504).json({ error: 'DeepSeek timeout — réessaie avec un message plus court' })
+    return res.status(500).json({ error: e.message })
   }
 })
 

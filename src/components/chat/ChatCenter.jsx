@@ -19,10 +19,6 @@ const SYSTEM_AGENTS = [
     badge: 'DeepSeek', badgeColor: 'rgba(59,130,246,0.1)', badgeBorder: 'rgba(59,130,246,0.3)', badgeText: '#3b82f6',
   },
   {
-    id: 'hugodecrypte', name: 'Hugo Décrypte', role: 'Veille & Actualités', icon: '🔍', color: '#8b5cf6',
-    badge: 'DeepSeek', badgeColor: 'rgba(139,92,246,0.1)', badgeBorder: 'rgba(139,92,246,0.3)', badgeText: '#8b5cf6',
-  },
-  {
     id: '2fois', name: '2fois', role: 'Réseaux Sociaux & Contenu', icon: '📱', color: '#ec4899',
     badge: 'DeepSeek', badgeColor: 'rgba(236,72,153,0.1)', badgeBorder: 'rgba(236,72,153,0.3)', badgeText: '#ec4899',
   },

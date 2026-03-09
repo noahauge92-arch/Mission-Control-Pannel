@@ -1,14 +1,16 @@
-import React from 'react'
-import { LayoutDashboard, Zap, ClipboardList, ChevronRight, Monitor, MessageSquare } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { LayoutDashboard, Zap, ClipboardList, ChevronRight, Monitor, MessageSquare, TrendingUp, Watch } from 'lucide-react'
 import { useStore } from '../../store/useStore'
 import clsx from 'clsx'
 
 const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard',      icon: LayoutDashboard },
-  { id: 'workspace', label: 'Workspace',       icon: Monitor },
-  { id: 'chat',      label: 'Chat',            icon: MessageSquare },
-  { id: 'tasks',     label: 'Tâches',          icon: ClipboardList },
-  { id: 'skills',    label: 'Skills',          icon: Zap },
+  { id: 'dashboard', label: 'Dashboard',  icon: LayoutDashboard },
+  { id: 'alfred',    label: 'Alfred',     icon: TrendingUp },
+  { id: 'workspace', label: 'Workspace',  icon: Monitor },
+  { id: 'chat',      label: 'Chat',       icon: MessageSquare },
+  { id: 'tasks',     label: 'Tâches',     icon: ClipboardList },
+  { id: 'skills',    label: 'Skills',     icon: Zap },
+  { id: 'watch',     label: 'Watch App',  icon: Watch },
 ]
 
 export default function Sidebar() {
@@ -18,6 +20,19 @@ export default function Sidebar() {
   const alfredError   = useStore((s) => s.alfredError)
   const loading       = useStore((s) => s.alfredLoading)
   const uptimeSeconds = useStore((s) => s.uptimeSeconds)
+  const [orchRunning, setOrchRunning] = useState(null)
+
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const r = await fetch('/api/orchestrator/status')
+        if (r.ok) { const d = await r.json(); setOrchRunning(d.running) }
+      } catch {}
+    }
+    check()
+    const id = setInterval(check, 30_000)
+    return () => clearInterval(id)
+  }, [])
   const regime  = (alfred?.regime ?? alfred?.market_regime ?? '—').toString().toUpperCase()
   const bank    = alfred?.bank ?? alfred?.balance ?? alfred?.capital
   const openPos = (alfred?.open_positions ?? alfred?.positions ?? []).length
@@ -90,6 +105,14 @@ export default function Sidebar() {
       <div className="px-3 py-3 border-t border-mc-border">
         <div className="text-[10px] text-mc-subtle font-mono">Alfred Mission Control</div>
         <div className="text-[9px] text-mc-subtle font-mono mt-0.5">~/.openclaw/alfred/</div>
+        {orchRunning !== null && (
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: orchRunning ? '#22c55e' : '#ef4444', flexShrink: 0, display: 'inline-block' }} />
+            <span className="text-[9px] font-mono" style={{ color: orchRunning ? '#22c55e' : '#4a6080' }}>
+              Orchestrateur {orchRunning ? 'actif' : 'arrêté'}
+            </span>
+          </div>
+        )}
       </div>
     </aside>
   )

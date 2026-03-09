@@ -35,10 +35,9 @@ const CATEGORIES = ['research', 'code', 'trading', 'analysis', 'other']
 const STATUSES   = ['todo', 'in-progress', 'done']
 
 const ASSIGNABLE_AGENTS = [
-  { id: 'patron',       name: 'Le Patron',    icon: '👑' },
-  { id: 'balthazar',    name: 'Balthazar',    icon: '💻' },
-  { id: 'hugodecrypte', name: 'Hugo Décrypte',icon: '🔍' },
-  { id: '2fois',        name: '2fois',        icon: '📱' },
+  { id: 'patron',    name: 'Le Patron', icon: '👑' },
+  { id: 'balthazar', name: 'Balthazar', icon: '💻' },
+  { id: '2fois',     name: '2fois',     icon: '📱' },
 ]
 
 const PRIORITY_CFG = {
@@ -48,9 +47,10 @@ const PRIORITY_CFG = {
 }
 
 const STATUS_CFG = {
-  'todo':        { color: '#94a3b8', icon: Circle,      label: 'Todo' },
-  'in-progress': { color: '#3b82f6', icon: Clock,       label: 'In Progress' },
+  'todo':        { color: '#94a3b8', icon: Circle,       label: 'Todo' },
+  'in-progress': { color: '#3b82f6', icon: Clock,        label: 'En cours' },
   'done':        { color: '#22c55e', icon: CheckCircle,  label: 'Done' },
+  'error':       { color: '#ef4444', icon: AlertCircle,  label: 'Erreur' },
 }
 
 const CATEGORY_CFG = {
@@ -269,6 +269,20 @@ function CreateTaskModal({ onClose, onCreate }) {
   )
 }
 
+// ── Elapsed time display ─────────────────────────────────────────────────────
+function useElapsed(startedAt) {
+  const [elapsed, setElapsed] = useState(0)
+  useEffect(() => {
+    if (!startedAt) return
+    const update = () => setElapsed(Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000))
+    update()
+    const id = setInterval(update, 1000)
+    return () => clearInterval(id)
+  }, [startedAt])
+  const m = Math.floor(elapsed / 60), s = elapsed % 60
+  return elapsed < 60 ? `${s}s` : `${m}m${s}s`
+}
+
 // ── TaskRow ──────────────────────────────────────────────────────────────────
 function TaskRow({ task, onUpdate, onDelete, onViewResult }) {
   const sCfg = STATUS_CFG[task.status] || STATUS_CFG.todo
@@ -276,8 +290,11 @@ function TaskRow({ task, onUpdate, onDelete, onViewResult }) {
   const cCfg = CATEGORY_CFG[task.category] || CATEGORY_CFG.other
   const StatusIcon = sCfg.icon
   const agentMeta  = ASSIGNABLE_AGENTS.find((a) => a.id === task.assignedTo)
+  const elapsed    = useElapsed(task.status === 'in-progress' ? task.startedAt : null)
+  const inProgress = task.status === 'in-progress'
 
   const cycleStatus = () => {
+    if (task.status === 'error') { onUpdate(task.id, { status: 'todo' }); return }
     const next = task.status === 'todo' ? 'in-progress' : task.status === 'in-progress' ? 'done' : 'todo'
     onUpdate(task.id, { status: next })
   }
@@ -287,14 +304,22 @@ function TaskRow({ task, onUpdate, onDelete, onViewResult }) {
       'flex items-center gap-3 px-4 py-3 border-b border-mc-border/50 hover:bg-mc-panel/30 transition-colors group',
       task.status === 'done' && 'opacity-60',
     )}>
-      {/* Status toggle */}
+      {/* Status toggle / spinner */}
       <button
         onClick={cycleStatus}
         className="shrink-0"
         style={{ background: 'none', border: 'none', cursor: 'pointer', color: sCfg.color, padding: 0 }}
         title={`Status: ${sCfg.label} (click to cycle)`}
       >
-        <StatusIcon size={16} />
+        {inProgress ? (
+          <div style={{
+            width: 16, height: 16, border: `2px solid ${sCfg.color}30`,
+            borderTop: `2px solid ${sCfg.color}`,
+            borderRadius: '50%', animation: 'task-spin 0.8s linear infinite',
+          }} />
+        ) : (
+          <StatusIcon size={16} />
+        )}
       </button>
 
       {/* Priority dot */}
@@ -305,11 +330,19 @@ function TaskRow({ task, onUpdate, onDelete, onViewResult }) {
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <div className={clsx('text-[12px] font-medium', task.status === 'done' ? 'text-mc-muted line-through' : 'text-mc-text')}>
-          {task.title}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <div className={clsx('text-[12px] font-medium truncate', task.status === 'done' ? 'text-mc-muted line-through' : 'text-mc-text')}>
+            {task.title}
+          </div>
+          {inProgress && task.startedAt && (
+            <span style={{ fontFamily: 'monospace', fontSize: 9, color: '#3b82f6', flexShrink: 0 }}>⏱ {elapsed}</span>
+          )}
         </div>
         {task.description && (
           <div className="text-[10px] text-mc-muted mt-0.5 truncate">{task.description}</div>
+        )}
+        {task.status === 'error' && task.error && (
+          <div style={{ fontFamily: 'monospace', fontSize: 9, color: '#ef4444', marginTop: 2 }}>❌ {task.error}</div>
         )}
       </div>
 
@@ -586,6 +619,7 @@ export default function TaskManager() {
 
       {showCreate && <CreateTaskModal onClose={() => setShowCreate(false)} onCreate={handleCreate} />}
       {resultTask  && <ResultModal task={resultTask} onClose={() => setResultTask(null)} />}
+      <style>{`@keyframes task-spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }

@@ -7,6 +7,8 @@ import SkillsHub from './components/skills/SkillsHub'
 import Workspace from './components/workspace/Workspace'
 import TaskManager from './components/tasks/TaskManager'
 import ChatCenter from './components/chat/ChatCenter'
+import AlfredDashboard from './components/alfred/AlfredDashboard'
+import WatchApp from './components/shared/WatchApp'
 import ComingSoon from './components/shared/ComingSoon'
 
 const POLL_MS = 30_000
@@ -48,10 +50,12 @@ export default function App() {
   const renderView = () => {
     switch (activeView) {
       case 'dashboard':  return <Dashboard />
+      case 'alfred':     return <AlfredDashboard />
       case 'workspace':  return <Workspace />
       case 'chat':       return <ChatCenter />
       case 'tasks':      return <TaskManager />
       case 'skills':     return <SkillsHub />
+      case 'watch':      return <WatchApp />
       default:           return <ComingSoon view={activeView} />
     }
   }
